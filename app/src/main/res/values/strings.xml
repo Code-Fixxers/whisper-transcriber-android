@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Whisper Transcriber</string>
+    <string name="channel_overlay">Overlay Service</string>
+    <string name="channel_vpn">Audio Capture VPN</string>
+    <string name="notification_overlay_title">Whisper Transcriber Active</string>
+    <string name="notification_overlay_text">Floating bubble is running</string>
+    <string name="notification_vpn_title">Audio Capture Active</string>
+    <string name="notification_vpn_text">Capturing device audio for transcription</string>
+</resources>
