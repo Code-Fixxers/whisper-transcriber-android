@@ -1,10 +1,7 @@
 package com.whispertranscriber
 
 import android.Manifest
-import android.app.Activity
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -14,7 +11,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,7 +22,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -48,7 +43,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.whispertranscriber.data.SettingsStore
-import com.whispertranscriber.service.AudioCaptureVpnService
 import com.whispertranscriber.service.FloatingOverlayService
 import com.whispertranscriber.ui.SettingsScreen
 import com.whispertranscriber.ui.theme.WhisperTranscriberTheme
@@ -57,17 +51,6 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var settingsStore: SettingsStore
     private var overlayRunning by mutableStateOf(false)
-    private var vpnRunning by mutableStateOf(false)
-
-    private val vpnPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            startVpnService()
-        } else {
-            Toast.makeText(this, "VPN permission denied", Toast.LENGTH_SHORT).show()
-        }
-    }
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -91,9 +74,7 @@ class MainActivity : ComponentActivity() {
                         HomeScreen(
                             onSettingsClick = { navController.navigate("settings") },
                             onToggleOverlay = { toggleOverlayService() },
-                            onToggleVpn = { toggleVpnService() },
-                            overlayRunning = overlayRunning,
-                            vpnRunning = vpnRunning
+                            overlayRunning = overlayRunning
                         )
                     }
                     composable("settings") {
@@ -134,31 +115,6 @@ class MainActivity : ComponentActivity() {
             overlayRunning = true
         }
     }
-
-    private fun toggleVpnService() {
-        if (vpnRunning) {
-            val intent = Intent(this, AudioCaptureVpnService::class.java).apply {
-                action = AudioCaptureVpnService.ACTION_STOP
-            }
-            startService(intent)
-            vpnRunning = false
-        } else {
-            val vpnIntent = VpnService.prepare(this)
-            if (vpnIntent != null) {
-                vpnPermissionLauncher.launch(vpnIntent)
-            } else {
-                startVpnService()
-            }
-        }
-    }
-
-    private fun startVpnService() {
-        val intent = Intent(this, AudioCaptureVpnService::class.java).apply {
-            action = AudioCaptureVpnService.ACTION_START
-        }
-        startForegroundService(intent)
-        vpnRunning = true
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -166,9 +122,7 @@ class MainActivity : ComponentActivity() {
 fun HomeScreen(
     onSettingsClick: () -> Unit,
     onToggleOverlay: () -> Unit,
-    onToggleVpn: () -> Unit,
-    overlayRunning: Boolean,
-    vpnRunning: Boolean
+    overlayRunning: Boolean
 ) {
     Scaffold(
         topBar = {
@@ -197,16 +151,15 @@ fun HomeScreen(
 
             Spacer(Modifier.height(8.dp))
 
-            Card(
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text("Floating Bubble", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Start the floating overlay to record and transcribe audio from anywhere.",
+                        "Start the floating overlay to record and transcribe audio from anywhere. " +
+                            "Audio is sent to your self-hosted Whisper server.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -231,52 +184,11 @@ fun HomeScreen(
                 }
             }
 
-            Card(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text("Audio Capture VPN", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "Enable VPN-based system audio capture for device-wide transcription.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Button(
-                        onClick = onToggleVpn,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = if (vpnRunning) {
-                            ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                        } else {
-                            ButtonDefaults.buttonColors()
-                        }
-                    ) {
-                        Icon(
-                            if (vpnRunning) Icons.Default.Stop else Icons.Default.VpnKey,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (vpnRunning) "Stop VPN" else "Start VPN Capture")
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center
-            ) {
-                Text(
-                    "Configure your Whisper server in Settings",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            Text(
+                "Configure your Whisper server URL in Settings",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
