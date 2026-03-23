@@ -217,7 +217,6 @@ class FloatingOverlayService : Service() {
     private fun showExpandedView() {
         val density = resources.displayMetrics.density
         val width = (280 * density).toInt()
-        val maxHeight = (350 * density).toInt()
         val padding = (16 * density).toInt()
 
         val container = LinearLayout(this).apply {

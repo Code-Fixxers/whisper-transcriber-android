@@ -11,8 +11,10 @@
       let
         pkgs = import nixpkgs {
           inherit system;
-          config.allowUnfree = true;
-          config.android_sdk.accept_license = true;
+          config = {
+            allowUnfree = true;
+            android_sdk.accept_license = true;
+          };
         };
 
         androidComposition = pkgs.androidenv.composeAndroidPackages {
@@ -30,11 +32,17 @@
           buildInputs = [
             pkgs.jdk17
             androidSdk
+            pkgs.gradle
           ];
 
           ANDROID_HOME = "${androidSdk}/libexec/android-sdk";
           ANDROID_SDK_ROOT = "${androidSdk}/libexec/android-sdk";
           JAVA_HOME = "${pkgs.jdk17}";
+
+          shellHook = ''
+            echo "Android SDK: $ANDROID_HOME"
+            echo "Java: $(java -version 2>&1 | head -1)"
+          '';
         };
       });
 }
