@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
@@ -43,13 +44,16 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.whispertranscriber.data.SettingsStore
+import com.whispertranscriber.data.TranscriptionLog
 import com.whispertranscriber.service.FloatingOverlayService
+import com.whispertranscriber.ui.LogScreen
 import com.whispertranscriber.ui.SettingsScreen
 import com.whispertranscriber.ui.theme.WhisperTranscriberTheme
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var settingsStore: SettingsStore
+    private lateinit var transcriptionLog: TranscriptionLog
     private var overlayRunning by mutableStateOf(false)
 
     private val permissionLauncher = registerForActivityResult(
@@ -64,6 +68,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         settingsStore = SettingsStore(this)
+        transcriptionLog = TranscriptionLog(this)
         requestPermissions()
 
         setContent {
@@ -73,6 +78,7 @@ class MainActivity : ComponentActivity() {
                     composable("home") {
                         HomeScreen(
                             onSettingsClick = { navController.navigate("settings") },
+                            onLogClick = { navController.navigate("log") },
                             onToggleOverlay = { toggleOverlayService() },
                             overlayRunning = overlayRunning
                         )
@@ -80,6 +86,12 @@ class MainActivity : ComponentActivity() {
                     composable("settings") {
                         SettingsScreen(
                             settingsStore = settingsStore,
+                            onBack = { navController.popBackStack() }
+                        )
+                    }
+                    composable("log") {
+                        LogScreen(
+                            transcriptionLog = transcriptionLog,
                             onBack = { navController.popBackStack() }
                         )
                     }
@@ -121,6 +133,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun HomeScreen(
     onSettingsClick: () -> Unit,
+    onLogClick: () -> Unit,
     onToggleOverlay: () -> Unit,
     overlayRunning: Boolean
 ) {
@@ -129,6 +142,9 @@ fun HomeScreen(
             TopAppBar(
                 title = { Text("Whisper Transcriber") },
                 actions = {
+                    IconButton(onClick = onLogClick) {
+                        Icon(Icons.Default.History, contentDescription = "Log")
+                    }
                     IconButton(onClick = onSettingsClick) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }

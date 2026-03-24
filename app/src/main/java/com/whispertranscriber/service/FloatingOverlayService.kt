@@ -27,8 +27,8 @@ import android.widget.Toast
 import com.whispertranscriber.MainActivity
 import com.whispertranscriber.R
 import com.whispertranscriber.audio.AudioRecorder
-import com.whispertranscriber.data.AppSettings
 import com.whispertranscriber.data.SettingsStore
+import com.whispertranscriber.data.TranscriptionLog
 import com.whispertranscriber.network.WhisperApiClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -49,6 +49,7 @@ class FloatingOverlayService : Service() {
 
     private lateinit var windowManager: WindowManager
     private lateinit var settingsStore: SettingsStore
+    private lateinit var transcriptionLog: TranscriptionLog
     private val audioRecorder = AudioRecorder()
     private val whisperClient = WhisperApiClient()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -66,6 +67,7 @@ class FloatingOverlayService : Service() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         settingsStore = SettingsStore(this)
+        transcriptionLog = TranscriptionLog(this)
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
         createBubbleView()
@@ -184,18 +186,33 @@ class FloatingOverlayService : Service() {
             updateExpandedViewText()
 
             val settings = settingsStore.settings.first()
+            val startTime = System.currentTimeMillis()
             try {
                 val result = whisperClient.transcribe(
                     serverUrl = settings.whisperServerUrl,
                     audioData = wavData
                 )
+                val elapsed = System.currentTimeMillis() - startTime
                 transcriptionText = if (result.success) {
                     result.text.ifBlank { "(No speech detected)" }
                 } else {
                     "Error: ${result.error}"
                 }
+                transcriptionLog.addEntry(
+                    durationMs = elapsed,
+                    success = result.success,
+                    text = result.text,
+                    error = result.error
+                )
             } catch (e: Exception) {
+                val elapsed = System.currentTimeMillis() - startTime
                 transcriptionText = "Error: ${e.message}"
+                transcriptionLog.addEntry(
+                    durationMs = elapsed,
+                    success = false,
+                    text = "",
+                    error = e.message
+                )
                 Log.e(TAG, "Transcription failed", e)
             }
             updateExpandedViewText()
