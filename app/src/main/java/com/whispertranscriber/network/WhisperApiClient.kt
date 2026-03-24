@@ -27,31 +27,25 @@ class WhisperApiClient {
 
     suspend fun transcribe(
         serverUrl: String,
-        apiKey: String,
         audioData: ByteArray,
-        language: String,
         fileName: String = "audio.wav"
     ): TranscriptionResult = withContext(Dispatchers.IO) {
         val audioBody = audioData.toRequestBody("audio/wav".toMediaType())
 
-        val multipartBuilder = MultipartBody.Builder()
+        val multipartBody = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
             .addFormDataPart("file", fileName, audioBody)
-            .addFormDataPart("model", "whisper-1")
+            .addFormDataPart("temperature", "0.0")
+            .addFormDataPart("temperature_inc", "0.2")
+            .addFormDataPart("response_format", "json")
+            .build()
 
-        if (language.isNotBlank()) {
-            multipartBuilder.addFormDataPart("language", language)
-        }
-
-        val requestBuilder = Request.Builder()
+        val request = Request.Builder()
             .url(serverUrl)
-            .post(multipartBuilder.build())
+            .post(multipartBody)
+            .build()
 
-        if (apiKey.isNotBlank()) {
-            requestBuilder.addHeader("Authorization", "Bearer $apiKey")
-        }
-
-        val response = client.newCall(requestBuilder.build()).await()
+        val response = client.newCall(request).await()
 
         response.use { resp ->
             val body = resp.body?.string() ?: ""

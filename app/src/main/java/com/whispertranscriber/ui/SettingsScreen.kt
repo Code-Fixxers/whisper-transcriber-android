@@ -29,7 +29,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.whispertranscriber.data.AppSettings
 import com.whispertranscriber.data.SettingsStore
@@ -72,38 +71,14 @@ fun SettingsScreen(
                 value = settings.whisperServerUrl,
                 onValueChange = { scope.launch { settingsStore.updateServerUrl(it) } },
                 label = { Text("Server URL") },
-                placeholder = { Text("http://localhost:9000/v1/audio/transcriptions") },
+                placeholder = { Text("http://localhost:8080/inference") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
 
-            Spacer(Modifier.height(12.dp))
-
-            OutlinedTextField(
-                value = settings.apiKey,
-                onValueChange = { scope.launch { settingsStore.updateApiKey(it) } },
-                label = { Text("API Key") },
-                placeholder = { Text("sk-...") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation()
-            )
-
             Spacer(Modifier.height(24.dp))
-            Text("Transcription", style = MaterialTheme.typography.titleMedium)
+            Text("Recording", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
-
-            OutlinedTextField(
-                value = settings.language,
-                onValueChange = { scope.launch { settingsStore.updateLanguage(it) } },
-                label = { Text("Language Code") },
-                placeholder = { Text("en") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                supportingText = { Text("ISO 639-1 code (e.g., en, es, fr, de, ja)") }
-            )
-
-            Spacer(Modifier.height(12.dp))
 
             var qualityExpanded by remember { mutableStateOf(false) }
             val qualityOptions = listOf("low" to "Low (8kHz)", "medium" to "Medium (16kHz)", "high" to "High (44.1kHz)")

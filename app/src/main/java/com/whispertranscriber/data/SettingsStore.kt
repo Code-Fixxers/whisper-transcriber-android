@@ -12,9 +12,7 @@ import kotlinx.coroutines.flow.map
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
 data class AppSettings(
-    val whisperServerUrl: String = "http://localhost:9000/v1/audio/transcriptions",
-    val apiKey: String = "",
-    val language: String = "en",
+    val whisperServerUrl: String = "http://localhost:8080/inference",
     val audioQuality: String = "medium"
 )
 
@@ -22,30 +20,18 @@ class SettingsStore(private val context: Context) {
 
     companion object {
         private val KEY_SERVER_URL = stringPreferencesKey("whisper_server_url")
-        private val KEY_API_KEY = stringPreferencesKey("api_key")
-        private val KEY_LANGUAGE = stringPreferencesKey("language")
         private val KEY_AUDIO_QUALITY = stringPreferencesKey("audio_quality")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
         AppSettings(
             whisperServerUrl = prefs[KEY_SERVER_URL] ?: AppSettings().whisperServerUrl,
-            apiKey = prefs[KEY_API_KEY] ?: AppSettings().apiKey,
-            language = prefs[KEY_LANGUAGE] ?: AppSettings().language,
             audioQuality = prefs[KEY_AUDIO_QUALITY] ?: AppSettings().audioQuality
         )
     }
 
     suspend fun updateServerUrl(url: String) {
         context.dataStore.edit { it[KEY_SERVER_URL] = url }
-    }
-
-    suspend fun updateApiKey(key: String) {
-        context.dataStore.edit { it[KEY_API_KEY] = key }
-    }
-
-    suspend fun updateLanguage(language: String) {
-        context.dataStore.edit { it[KEY_LANGUAGE] = language }
     }
 
     suspend fun updateAudioQuality(quality: String) {

@@ -187,9 +187,7 @@ class FloatingOverlayService : Service() {
             try {
                 val result = whisperClient.transcribe(
                     serverUrl = settings.whisperServerUrl,
-                    apiKey = settings.apiKey,
-                    audioData = wavData,
-                    language = settings.language
+                    audioData = wavData
                 )
                 transcriptionText = if (result.success) {
                     result.text.ifBlank { "(No speech detected)" }
