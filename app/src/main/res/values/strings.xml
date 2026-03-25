@@ -4,4 +4,5 @@
     <string name="channel_overlay">Overlay Service</string>
     <string name="notification_overlay_title">Whisper Transcriber Active</string>
     <string name="notification_overlay_text">Floating bubble is running</string>
+    <string name="accessibility_service_description">Allows Whisper Transcriber to paste transcribed text into the currently focused text field.</string>
 </resources>

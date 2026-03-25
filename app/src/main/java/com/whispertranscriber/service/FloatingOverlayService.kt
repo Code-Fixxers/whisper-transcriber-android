@@ -193,10 +193,13 @@ class FloatingOverlayService : Service() {
                     audioData = wavData
                 )
                 val elapsed = System.currentTimeMillis() - startTime
-                transcriptionText = if (result.success) {
-                    result.text.ifBlank { "(No speech detected)" }
+                if (result.success && result.text.isNotBlank()) {
+                    transcriptionText = result.text
+                    outputText(result.text)
+                } else if (result.success) {
+                    transcriptionText = "(No speech detected)"
                 } else {
-                    "Error: ${result.error}"
+                    transcriptionText = "Error: ${result.error}"
                 }
                 transcriptionLog.addEntry(
                     durationMs = elapsed,
@@ -320,6 +323,20 @@ class FloatingOverlayService : Service() {
 
     private fun updateExpandedViewText() {
         expandedView?.findViewWithTag<TextView>("transcription_content")?.text = transcriptionText
+    }
+
+    private fun outputText(text: String) {
+        // Always copy to clipboard
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Transcription", text))
+
+        // Try to paste into the focused text field via accessibility
+        if (TranscriberAccessibilityService.pasteText(text)) {
+            Log.d(TAG, "Text pasted into focused field")
+        } else {
+            Toast.makeText(this, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+            Log.d(TAG, "No focused field, copied to clipboard")
+        }
     }
 
     private fun copyToClipboard() {

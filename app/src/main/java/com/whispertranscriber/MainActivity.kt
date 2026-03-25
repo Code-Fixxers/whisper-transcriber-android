@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import com.whispertranscriber.service.TranscriberAccessibilityService
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -20,11 +21,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Accessibility
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -80,7 +83,11 @@ class MainActivity : ComponentActivity() {
                             onSettingsClick = { navController.navigate("settings") },
                             onLogClick = { navController.navigate("log") },
                             onToggleOverlay = { toggleOverlayService() },
-                            overlayRunning = overlayRunning
+                            onEnableAccessibility = {
+                                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                            },
+                            overlayRunning = overlayRunning,
+                            accessibilityEnabled = TranscriberAccessibilityService.isAvailable()
                         )
                     }
                     composable("settings") {
@@ -135,7 +142,9 @@ fun HomeScreen(
     onSettingsClick: () -> Unit,
     onLogClick: () -> Unit,
     onToggleOverlay: () -> Unit,
-    overlayRunning: Boolean
+    onEnableAccessibility: () -> Unit,
+    overlayRunning: Boolean,
+    accessibilityEnabled: Boolean
 ) {
     Scaffold(
         topBar = {
@@ -196,6 +205,35 @@ fun HomeScreen(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(if (overlayRunning) "Stop Overlay" else "Start Overlay")
+                    }
+                }
+            }
+
+            if (!accessibilityEnabled) {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text("Type into Apps", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Enable the accessibility service to automatically paste transcriptions into the focused text field.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        OutlinedButton(
+                            onClick = onEnableAccessibility,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                Icons.Default.Accessibility,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("Enable Accessibility")
+                        }
                     }
                 }
             }
