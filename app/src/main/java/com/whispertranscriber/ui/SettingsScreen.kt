@@ -22,7 +22,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,10 +30,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.unit.dp
 import com.whispertranscriber.data.AppSettings
 import com.whispertranscriber.data.SettingsStore
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -45,14 +46,18 @@ fun SettingsScreen(
     val settings by settingsStore.settings.collectAsState(initial = AppSettings())
     val scope = rememberCoroutineScope()
 
-    var serverUrl by remember(settings.whisperServerUrl) { mutableStateOf(settings.whisperServerUrl) }
+    // Local state for the text field, seeded once from persisted value
+    var serverUrl by remember { mutableStateOf<String?>(null) }
+    var debounceJob by remember { mutableStateOf<Job?>(null) }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            // Persist when leaving the screen
-            scope.launch { settingsStore.updateServerUrl(serverUrl) }
+    // Seed local state from DataStore only on first real emission
+    LaunchedEffect(settings.whisperServerUrl) {
+        if (serverUrl == null) {
+            serverUrl = settings.whisperServerUrl
         }
     }
+
+    val displayUrl = serverUrl ?: settings.whisperServerUrl
 
     Scaffold(
         topBar = {
@@ -79,17 +84,18 @@ fun SettingsScreen(
             Spacer(Modifier.height(8.dp))
 
             OutlinedTextField(
-                value = serverUrl,
-                onValueChange = { serverUrl = it },
+                value = displayUrl,
+                onValueChange = { newValue ->
+                    serverUrl = newValue
+                    debounceJob?.cancel()
+                    debounceJob = scope.launch {
+                        delay(500)
+                        settingsStore.updateServerUrl(newValue)
+                    }
+                },
                 label = { Text("Server URL") },
-                placeholder = { Text("http://localhost:8080/inference") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .onFocusChanged { focus ->
-                        if (!focus.isFocused) {
-                            scope.launch { settingsStore.updateServerUrl(serverUrl) }
-                        }
-                    },
+                placeholder = { Text("http://10.147.20.13:8080/inference") },
+                modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
 
