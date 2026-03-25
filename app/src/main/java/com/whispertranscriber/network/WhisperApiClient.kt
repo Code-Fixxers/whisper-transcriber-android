@@ -48,18 +48,18 @@ class WhisperApiClient {
         audioData: ByteArray,
         fileName: String = "audio.wav"
     ): TranscriptionResult = withContext(Dispatchers.IO) {
+        val url = serverUrl.trimEnd('/') + "/v1/audio/transcriptions"
         val audioBody = audioData.toRequestBody("audio/wav".toMediaType())
 
         val multipartBody = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
             .addFormDataPart("file", fileName, audioBody)
-            .addFormDataPart("temperature", "0.0")
-            .addFormDataPart("temperature_inc", "0.2")
+            .addFormDataPart("model", "whisper-1")
             .addFormDataPart("response_format", "json")
             .build()
 
         val request = Request.Builder()
-            .url(serverUrl)
+            .url(url)
             .post(multipartBody)
             .build()
 

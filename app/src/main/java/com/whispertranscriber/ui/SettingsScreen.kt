@@ -94,7 +94,7 @@ fun SettingsScreen(
                     }
                 },
                 label = { Text("Server URL") },
-                placeholder = { Text("http://10.147.20.13:8080/inference") },
+                placeholder = { Text("http://10.147.20.13:8080") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )

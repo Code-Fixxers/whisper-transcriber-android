@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.map
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
 data class AppSettings(
-    val whisperServerUrl: String = "http://localhost:8080/inference",
+    val whisperServerUrl: String = "http://localhost:8080",
     val audioQuality: String = "medium"
 )
 
