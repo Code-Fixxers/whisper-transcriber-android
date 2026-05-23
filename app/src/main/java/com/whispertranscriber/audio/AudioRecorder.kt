@@ -25,7 +25,7 @@ class AudioRecorder {
 
     fun getSampleRate(): Int = sampleRate
 
-    fun startRecording(quality: String = "medium") {
+    fun startRecording(quality: String = "medium", onPcmChunk: ((ByteArray) -> Unit)? = null) {
         if (isRecording) return
 
         sampleRate = when (quality) {
@@ -68,9 +68,11 @@ class AudioRecorder {
                 while (isRecording) {
                     val read = audioRecord?.read(buffer, 0, buffer.size) ?: -1
                     if (read > 0) {
+                        val chunk = buffer.copyOf(read)
                         synchronized(audioBuffer) {
-                            audioBuffer.write(buffer, 0, read)
+                            audioBuffer.write(chunk)
                         }
+                        onPcmChunk?.invoke(chunk)
                     }
                 }
             }.apply {

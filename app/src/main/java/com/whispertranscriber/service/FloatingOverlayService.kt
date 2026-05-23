@@ -30,6 +30,9 @@ import com.whispertranscriber.audio.AudioRecorder
 import com.whispertranscriber.data.SettingsStore
 import com.whispertranscriber.data.TranscriptionLog
 import com.whispertranscriber.network.WhisperApiClient
+import com.whispertranscriber.network.WhisperLiveKitClient
+import com.whispertranscriber.network.WhisperLiveKitSession
+import com.whispertranscriber.network.WhisperServerDiscovery
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -52,6 +55,7 @@ class FloatingOverlayService : Service() {
     private lateinit var transcriptionLog: TranscriptionLog
     private val audioRecorder = AudioRecorder()
     private val whisperClient = WhisperApiClient()
+    private val liveKitClient = WhisperLiveKitClient()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     private var bubbleView: View? = null
@@ -60,6 +64,8 @@ class FloatingOverlayService : Service() {
     private var isExpanded = false
     private var transcriptionText = ""
     private var transcriptionJob: Job? = null
+    private var liveKitSession: WhisperLiveKitSession? = null
+    private var liveKitReady = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -166,9 +172,39 @@ class FloatingOverlayService : Service() {
         serviceScope.launch {
             val settings = settingsStore.settings.first()
             isRecording = true
+            liveKitReady = false
             icon.setBackgroundResource(R.drawable.bubble_recording)
             icon.setImageResource(R.drawable.ic_stop)
-            audioRecorder.startRecording(settings.audioQuality)
+            transcriptionText = "Discovering..."
+            updateExpandedViewText()
+            val serverUrl = try {
+                resolveServerUrl(settings.whisperServerUrl)
+            } catch (e: Exception) {
+                isRecording = false
+                icon.setBackgroundResource(R.drawable.bubble_background)
+                icon.setImageResource(R.drawable.ic_mic)
+                transcriptionText = "Error: ${e.message}"
+                updateExpandedViewText()
+                return@launch
+            }
+            liveKitSession = try {
+                liveKitClient.connect(serverUrl) { partial ->
+                    serviceScope.launch {
+                        transcriptionText = partial
+                        updateExpandedViewText()
+                    }
+                }.also {
+                    liveKitReady = true
+                    transcriptionText = "Listening..."
+                    updateExpandedViewText()
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Live streaming unavailable, using REST fallback", e)
+                null
+            }
+            audioRecorder.startRecording(if (liveKitReady) "medium" else settings.audioQuality) { chunk ->
+                liveKitSession?.sendPcm(chunk)
+            }
             Log.d(TAG, "Recording started")
         }
     }
@@ -188,10 +224,26 @@ class FloatingOverlayService : Service() {
             val settings = settingsStore.settings.first()
             val startTime = System.currentTimeMillis()
             try {
-                val result = whisperClient.transcribe(
-                    serverUrl = settings.whisperServerUrl,
-                    audioData = wavData
-                )
+                val serverUrl = resolveServerUrl(settings.whisperServerUrl)
+                val session = liveKitSession
+                liveKitSession = null
+                val result = if (liveKitReady && session != null) {
+                    try {
+                        session.finish()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Live transcription finalization failed, retrying with REST", e)
+                        whisperClient.transcribe(
+                            serverUrl = serverUrl,
+                            audioData = wavData
+                        )
+                    }
+                } else {
+                    whisperClient.transcribe(
+                        serverUrl = serverUrl,
+                        audioData = wavData
+                    )
+                }
+                liveKitReady = false
                 val elapsed = System.currentTimeMillis() - startTime
                 if (result.success && result.text.isNotBlank()) {
                     transcriptionText = result.text
@@ -208,6 +260,9 @@ class FloatingOverlayService : Service() {
                     error = result.error
                 )
             } catch (e: Exception) {
+                liveKitReady = false
+                liveKitSession?.cancel()
+                liveKitSession = null
                 val elapsed = System.currentTimeMillis() - startTime
                 transcriptionText = "Error: ${e.message}"
                 transcriptionLog.addEntry(
@@ -220,6 +275,14 @@ class FloatingOverlayService : Service() {
             }
             updateExpandedViewText()
         }
+    }
+
+    private suspend fun resolveServerUrl(configuredUrl: String): String {
+        if (configuredUrl.isNotBlank()) return configuredUrl
+        val discovered = WhisperServerDiscovery.discover()
+            ?: throw IllegalStateException("No WhisperLiveKit server found on local networks or Tailscale port 8090")
+        settingsStore.updateServerUrl(discovered.url)
+        return discovered.url
     }
 
     private fun toggleExpandedView() {
@@ -386,6 +449,7 @@ class FloatingOverlayService : Service() {
         serviceScope.cancel()
         audioRecorder.release()
         whisperClient.shutdown()
+        liveKitClient.shutdown()
         removeExpandedView()
         bubbleView?.let {
             try {

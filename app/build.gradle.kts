@@ -11,8 +11,14 @@ android {
         applicationId = "com.whispertranscriber"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = (System.getenv("VERSION_CODE") ?: System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
+        versionName = System.getenv("VERSION_NAME") ?: "1.0.${System.getenv("GITHUB_RUN_NUMBER") ?: "0"}"
+
+        buildConfigField(
+            "String",
+            "UPDATE_MANIFEST_URL",
+            "\"${System.getenv("UPDATE_MANIFEST_URL") ?: "https://github.com/Code-Fixxers/whisper-transcriber-android/releases/download/app-latest/app-manifest.json"}\""
+        )
     }
 
     buildTypes {
@@ -36,6 +42,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     composeOptions {
@@ -68,6 +75,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
     implementation("com.google.code.gson:gson:2.10.1")
+
+    testImplementation("junit:junit:4.13.2")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

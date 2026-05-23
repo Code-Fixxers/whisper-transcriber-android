@@ -10,6 +10,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -33,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.whispertranscriber.data.AppSettings
 import com.whispertranscriber.data.SettingsStore
+import com.whispertranscriber.network.WhisperServerDiscovery
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -49,6 +52,8 @@ fun SettingsScreen(
     // Local state for the text field, seeded once from persisted value
     var serverUrl by remember { mutableStateOf<String?>(null) }
     var debounceJob by remember { mutableStateOf<Job?>(null) }
+    var discoveryStatus by remember { mutableStateOf("Leave blank to auto-discover port 8090.") }
+    var discovering by remember { mutableStateOf(false) }
 
     // Seed local state from DataStore only on first real emission
     LaunchedEffect(settings.whisperServerUrl) {
@@ -80,7 +85,7 @@ fun SettingsScreen(
         ) {
             Spacer(Modifier.height(8.dp))
 
-            Text("Whisper Server", style = MaterialTheme.typography.titleMedium)
+            Text("WhisperLiveKit Server", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
 
             OutlinedTextField(
@@ -94,9 +99,39 @@ fun SettingsScreen(
                     }
                 },
                 label = { Text("Server URL") },
-                placeholder = { Text("http://10.147.20.13:8080") },
+                placeholder = { Text("Auto-discover http://*:8090") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
+            )
+
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = {
+                    discovering = true
+                    discoveryStatus = "Scanning local networks and Tailscale..."
+                    scope.launch {
+                        val discovered = WhisperServerDiscovery.discover()
+                        if (discovered == null) {
+                            discoveryStatus = "No WhisperLiveKit server found on port 8090."
+                        } else {
+                            serverUrl = discovered.url
+                            settingsStore.updateServerUrl(discovered.url)
+                            discoveryStatus = "Found ${discovered.url}"
+                        }
+                        discovering = false
+                    }
+                },
+                enabled = !discovering,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Search, contentDescription = null)
+                Text(if (discovering) "Scanning..." else "Discover Server")
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                discoveryStatus,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Spacer(Modifier.height(24.dp))

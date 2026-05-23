@@ -7,9 +7,11 @@ import android.os.Bundle
 import android.provider.Settings
 import com.whispertranscriber.service.TranscriberAccessibilityService
 import android.widget.Toast
+import java.io.File
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.lifecycleScope
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -19,12 +21,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Accessibility
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedButton
@@ -52,12 +58,22 @@ import com.whispertranscriber.service.FloatingOverlayService
 import com.whispertranscriber.ui.LogScreen
 import com.whispertranscriber.ui.SettingsScreen
 import com.whispertranscriber.ui.theme.WhisperTranscriberTheme
+import com.whispertranscriber.update.AppUpdateClient
+import com.whispertranscriber.update.AppUpdateInstaller
+import com.whispertranscriber.update.UpdateCheckResult
+import com.whispertranscriber.update.UpdateManifest
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var settingsStore: SettingsStore
     private lateinit var transcriptionLog: TranscriptionLog
+    private lateinit var updateClient: AppUpdateClient
     private var overlayRunning by mutableStateOf(false)
+    private var updateStatus by mutableStateOf("Current build: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+    private var availableUpdate by mutableStateOf<UpdateManifest?>(null)
+    private var downloadedUpdate by mutableStateOf<File?>(null)
+    private var updateBusy by mutableStateOf(false)
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -72,7 +88,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         settingsStore = SettingsStore(this)
         transcriptionLog = TranscriptionLog(this)
+        updateClient = AppUpdateClient(this, BuildConfig.UPDATE_MANIFEST_URL)
         requestPermissions()
+        checkForUpdates()
 
         setContent {
             WhisperTranscriberTheme {
@@ -86,8 +104,15 @@ class MainActivity : ComponentActivity() {
                             onEnableAccessibility = {
                                 startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                             },
+                            onCheckUpdate = { checkForUpdates() },
+                            onDownloadUpdate = { downloadUpdate() },
+                            onInstallUpdate = { installUpdate() },
                             overlayRunning = overlayRunning,
-                            accessibilityEnabled = TranscriberAccessibilityService.isAvailable()
+                            accessibilityEnabled = TranscriberAccessibilityService.isAvailable(),
+                            updateStatus = updateStatus,
+                            updateAvailable = availableUpdate != null,
+                            updateDownloaded = downloadedUpdate != null,
+                            updateBusy = updateBusy
                         )
                     }
                     composable("settings") {
@@ -134,6 +159,57 @@ class MainActivity : ComponentActivity() {
             overlayRunning = true
         }
     }
+
+    private fun checkForUpdates() {
+        if (updateBusy) return
+        updateBusy = true
+        updateStatus = "Checking for updates..."
+        lifecycleScope.launch {
+            try {
+                when (val result = updateClient.check(BuildConfig.VERSION_CODE)) {
+                    is UpdateCheckResult.Available -> {
+                        availableUpdate = result.manifest
+                        downloadedUpdate = null
+                        updateStatus = "Update available: ${result.manifest.versionName} (${result.manifest.versionCode})"
+                    }
+                    UpdateCheckResult.UpToDate -> {
+                        availableUpdate = null
+                        downloadedUpdate = null
+                        updateStatus = "Up to date: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
+                    }
+                    is UpdateCheckResult.Failed -> {
+                        updateStatus = result.message
+                    }
+                }
+            } catch (e: Exception) {
+                updateStatus = e.message ?: "Update check failed"
+            } finally {
+                updateBusy = false
+            }
+        }
+    }
+
+    private fun downloadUpdate() {
+        val manifest = availableUpdate ?: return
+        if (updateBusy) return
+        updateBusy = true
+        updateStatus = "Downloading ${manifest.versionName}..."
+        lifecycleScope.launch {
+            try {
+                downloadedUpdate = updateClient.download(manifest)
+                updateStatus = "Downloaded ${manifest.versionName}. Ready to install."
+            } catch (e: Exception) {
+                updateStatus = e.message ?: "Download failed"
+            } finally {
+                updateBusy = false
+            }
+        }
+    }
+
+    private fun installUpdate() {
+        val file = downloadedUpdate ?: return
+        AppUpdateInstaller.install(this, file)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -143,8 +219,15 @@ fun HomeScreen(
     onLogClick: () -> Unit,
     onToggleOverlay: () -> Unit,
     onEnableAccessibility: () -> Unit,
+    onCheckUpdate: () -> Unit,
+    onDownloadUpdate: () -> Unit,
+    onInstallUpdate: () -> Unit,
     overlayRunning: Boolean,
-    accessibilityEnabled: Boolean
+    accessibilityEnabled: Boolean,
+    updateStatus: String,
+    updateAvailable: Boolean,
+    updateDownloaded: Boolean,
+    updateBusy: Boolean
 ) {
     Scaffold(
         topBar = {
@@ -165,7 +248,8 @@ fun HomeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(24.dp),
+                .padding(24.dp)
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -184,7 +268,7 @@ fun HomeScreen(
                     Text("Floating Bubble", style = MaterialTheme.typography.titleMedium)
                     Text(
                         "Start the floating overlay to record and transcribe audio from anywhere. " +
-                            "Audio is sent to your self-hosted Whisper server.",
+                            "Audio is streamed to your self-hosted WhisperLiveKit server.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -205,6 +289,63 @@ fun HomeScreen(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(if (overlayRunning) "Stop Overlay" else "Start Overlay")
+                    }
+                }
+            }
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("App Updates", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        updateStatus,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Button(
+                        onClick = onCheckUpdate,
+                        enabled = !updateBusy,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            Icons.Default.SystemUpdate,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Check for Updates")
+                    }
+                    if (updateAvailable && !updateDownloaded) {
+                        OutlinedButton(
+                            onClick = onDownloadUpdate,
+                            enabled = !updateBusy,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                Icons.Default.Download,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("Download Update")
+                        }
+                    }
+                    if (updateDownloaded) {
+                        OutlinedButton(
+                            onClick = onInstallUpdate,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                Icons.Default.SystemUpdate,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("Install Update")
+                        }
                     }
                 }
             }
@@ -239,7 +380,7 @@ fun HomeScreen(
             }
 
             Text(
-                "Configure your Whisper server URL in Settings",
+                "Configure your WhisperLiveKit server URL in Settings",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

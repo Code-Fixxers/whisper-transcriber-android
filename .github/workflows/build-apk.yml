@@ -5,6 +5,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: self-hosted
@@ -15,10 +18,26 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: Set version metadata
+        id: version
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+          echo "version_code=${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "version_name=1.0.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+
       - name: Build Debug APK
+        env:
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          UPDATE_MANIFEST_URL: https://github.com/${{ github.repository }}/releases/download/app-latest/app-manifest.json
         run: nix develop --command ./gradlew assembleDebug
 
       - name: Build Release APK
+        env:
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          UPDATE_MANIFEST_URL: https://github.com/${{ github.repository }}/releases/download/app-latest/app-manifest.json
         run: nix develop --command ./gradlew assembleRelease
 
       - name: Upload Debug APK
@@ -34,6 +53,44 @@ jobs:
           name: release-apk-${{ github.sha }}
           path: app/build/outputs/apk/release/*.apk
           retention-days: 7
+
+      - name: Publish rolling app-latest release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHORT_SHA: ${{ steps.version.outputs.short_sha }}
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+        run: |
+          set -euo pipefail
+          TAG="app-latest"
+          mkdir -p dist
+
+          git tag -f "$TAG"
+          git push origin "refs/tags/$TAG" --force
+
+          gh release delete "$TAG" --yes --cleanup-tag=false 2>/dev/null || true
+          cp app/build/outputs/apk/debug/*.apk dist/app.apk
+          APK_SIZE=$(stat -c%s dist/app.apk)
+          APK_SHA256=$(sha256sum dist/app.apk | awk '{print $1}')
+
+          cat > dist/app-manifest.json <<EOF
+          {
+            "versionCode": ${VERSION_CODE},
+            "versionName": "${VERSION_NAME}",
+            "commit": "${SHORT_SHA}",
+            "apkUrl": "https://github.com/${{ github.repository }}/releases/download/app-latest/app.apk",
+            "sizeBytes": ${APK_SIZE},
+            "sha256": "${APK_SHA256}"
+          }
+          EOF
+
+          gh release create "$TAG" \
+            --title "App - $SHORT_SHA" \
+            --notes "Rolling build for $SHORT_SHA" \
+            --prerelease \
+            dist/app.apk \
+            dist/app-manifest.json
 
   cleanup:
     runs-on: self-hosted

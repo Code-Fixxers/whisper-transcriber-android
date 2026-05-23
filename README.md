@@ -1,6 +1,6 @@
 # Whisper Transcriber
 
-Android floating overlay app for voice-to-text using a self-hosted [whisper.cpp](https://github.com/ggml-org/whisper.cpp) server. Tap the bubble, speak, and the transcription is typed directly into whatever text field you're using.
+Android floating overlay app for voice-to-text using a self-hosted [WhisperLiveKit](https://github.com/QuentinFuxa/WhisperLiveKit) server. Tap the bubble, speak, and the transcription is typed directly into whatever text field you're using.
 
 Works over Tailscale / ZeroTier — just point it at your server's VPN IP.
 
@@ -8,23 +8,24 @@ Works over Tailscale / ZeroTier — just point it at your server's VPN IP.
 
 1. A floating bubble sits over all apps (like Messenger chat heads)
 2. Tap to start recording, tap again to stop
-3. Audio is sent to your whisper.cpp server via the OpenAI-compatible API (`/v1/audio/transcriptions`)
-4. Transcribed text is automatically typed into the focused input field (or copied to clipboard)
+3. Audio is streamed to WhisperLiveKit via native WebSocket (`/asr`) when PCM input is enabled
+4. If live streaming is unavailable, the app falls back to the OpenAI-compatible REST API (`/v1/audio/transcriptions`)
+5. Transcribed text is automatically typed into the focused input field (or copied to clipboard)
 
 ## Setup
 
 ### Server
 
-Run [whisper.cpp server](https://github.com/ggml-org/whisper.cpp) on your machine:
+Run [WhisperLiveKit](https://github.com/QuentinFuxa/WhisperLiveKit) on your machine. For native Android streaming, start it with PCM input enabled:
 
 ```bash
-./whisper-server -m models/ggml-base.en.bin --port 8080
+whisperlivekit-server --host 0.0.0.0 --port 8090 --pcm-input
 ```
 
 ### App
 
 1. Install the APK (grab from [Actions artifacts](../../actions) or build yourself)
-2. Open the app, go to **Settings**, enter your server URL (e.g. `http://10.147.20.13:8080`)
+2. Open the app. Leave the server URL blank to auto-discover WhisperLiveKit on local networks and Tailscale port `8090`, or set a URL manually in **Settings**.
 3. Grant permissions when prompted:
    - **Microphone** — for recording audio
    - **Display over other apps** — for the floating bubble
@@ -79,7 +80,9 @@ app/src/main/java/com/whispertranscriber/
 │   ├── SettingsStore.kt          # DataStore-backed preferences
 │   └── TranscriptionLog.kt      # Transcription history (last 100)
 ├── network/
-│   └── WhisperApiClient.kt      # OkHttp multipart POST to whisper server
+│   ├── WhisperApiClient.kt      # REST fallback via OpenAI-compatible API
+│   └── WhisperLiveKitClient.kt  # Native WebSocket streaming client
+├── update/                      # GitHub Release update checker/downloader/installer
 ├── service/
 │   ├── FloatingOverlayService.kt          # Bubble UI + record/transcribe flow
 │   └── TranscriberAccessibilityService.kt # Types text into focused fields
@@ -109,9 +112,13 @@ let result = client.transcribe_with_cashu(
 println!("{}", result.text);
 ```
 
+## Updates
+
+The app checks a rolling GitHub Release manifest at `app-latest`. When a newer `versionCode` is available, it downloads `app.apk`, verifies size and SHA-256, then hands off to Android's package installer. Android still requires user approval, and APK signing must stay consistent between builds. CI currently publishes the debug-signed APK because no release signing key is configured in this repo.
+
 ## Network notes
 
-- **HTTP** works out of the box to any IP (cleartext traffic is allowed via network security config)
+- **HTTP / ws://** works out of the box to any IP (cleartext traffic is allowed via network security config)
 - **HTTPS with self-signed certs** works — the client trusts all certificates (this is a private VPN tool, not a public app)
 - Works over **Tailscale**, **ZeroTier**, or any VPN — just use the VPN IP as the server URL
 
