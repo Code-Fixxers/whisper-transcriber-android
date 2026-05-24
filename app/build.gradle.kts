@@ -21,9 +21,23 @@ android {
         )
     }
 
+    signingConfigs {
+        val releaseKeystore = System.getenv("ANDROID_KEYSTORE_FILE")
+        if (!releaseKeystore.isNullOrBlank()) {
+            create("releaseFromEnv") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+                    ?: System.getenv("ANDROID_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("releaseFromEnv")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

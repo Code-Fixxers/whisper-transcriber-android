@@ -26,6 +26,19 @@ jobs:
           echo "version_code=${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           echo "version_name=1.0.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
 
+      - name: Prepare release signing
+        id: signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            KEYSTORE_FILE="$RUNNER_TEMP/release-keystore.jks"
+            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_FILE"
+            echo "keystore_file=$KEYSTORE_FILE" >> "$GITHUB_OUTPUT"
+          else
+            echo "keystore_file=" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build Debug APK
         env:
           VERSION_CODE: ${{ steps.version.outputs.version_code }}
@@ -38,6 +51,10 @@ jobs:
           VERSION_CODE: ${{ steps.version.outputs.version_code }}
           VERSION_NAME: ${{ steps.version.outputs.version_name }}
           UPDATE_MANIFEST_URL: https://github.com/${{ github.repository }}/releases/download/app-latest/app-manifest.json
+          ANDROID_KEYSTORE_FILE: ${{ steps.signing.outputs.keystore_file }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: nix develop --command ./gradlew assembleRelease
 
       - name: Publish rolling app-latest release
@@ -52,11 +69,16 @@ jobs:
           TAG="app-latest"
           mkdir -p dist
 
+          if [ ! -f app/build/outputs/apk/release/app-release.apk ]; then
+            echo "Signed release APK not found. Configure Android signing secrets before publishing."
+            exit 1
+          fi
+
           git tag -f "$TAG"
           git push origin "refs/tags/$TAG" --force
 
           gh release delete "$TAG" --yes --cleanup-tag=false 2>/dev/null || true
-          cp app/build/outputs/apk/debug/*.apk dist/app.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/app.apk
           APK_SIZE=$(stat -c%s dist/app.apk)
           APK_SHA256=$(sha256sum dist/app.apk | awk '{print $1}')
 
