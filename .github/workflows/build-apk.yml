@@ -6,7 +6,6 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: write
   contents: write
 
 jobs:
@@ -40,20 +39,6 @@ jobs:
           VERSION_NAME: ${{ steps.version.outputs.version_name }}
           UPDATE_MANIFEST_URL: https://github.com/${{ github.repository }}/releases/download/app-latest/app-manifest.json
         run: nix develop --command ./gradlew assembleRelease
-
-      - name: Upload Debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-apk-${{ github.sha }}
-          path: app/build/outputs/apk/debug/*.apk
-          retention-days: 7
-
-      - name: Upload Release APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-apk-${{ github.sha }}
-          path: app/build/outputs/apk/release/*.apk
-          retention-days: 7
 
       - name: Publish rolling app-latest release
         if: github.ref == 'refs/heads/main'
@@ -92,29 +77,3 @@ jobs:
             --prerelease \
             dist/app.apk \
             dist/app-manifest.json
-
-  cleanup:
-    runs-on: [self-hosted, nix]
-    needs: build
-    steps:
-      - uses: actions/github-script@v7
-        with:
-          script: |
-            const artifacts = await github.rest.actions.listArtifactsForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              per_page: 100,
-            });
-            const now = Date.now();
-            const sevenDays = 7 * 24 * 60 * 60 * 1000;
-            for (const artifact of artifacts.data.artifacts) {
-              const created = new Date(artifact.created_at).getTime();
-              if (now - created > sevenDays) {
-                await github.rest.actions.deleteArtifact({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  artifact_id: artifact.id,
-                });
-                console.log(`Deleted old artifact: ${artifact.name}`);
-              }
-            }
