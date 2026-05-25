@@ -123,6 +123,19 @@ The app checks a rolling GitHub Release manifest at `app-latest`. When a newer `
 - **HTTPS with self-signed certs** works — the client trusts all certificates (this is a private VPN tool, not a public app)
 - Works over **Tailscale**, **ZeroTier**, or any VPN — just use the VPN IP as the server URL
 
+## Live endpoint probe
+
+Use the probe script to verify a deployed WhisperLiveKit server with a known 16 kHz mono WAV:
+
+```bash
+python3 scripts/whisperlivekit_live_probe.py \
+  --url http://100.101.157.56:8090 \
+  --wav /tmp/jfk.wav \
+  --expect country
+```
+
+The app needs the server WebSocket config to report `"useAudioWorklet": true` for real-time Android PCM streaming. Start WhisperLiveKit with `--pcm-input` for that mode.
+
 ## Tech stack
 
 - Kotlin + Jetpack Compose + Material 3
