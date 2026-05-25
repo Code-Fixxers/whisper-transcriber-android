@@ -14,9 +14,11 @@ import android.graphics.PixelFormat
 import android.os.IBinder
 import android.util.Log
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -84,7 +86,7 @@ class FloatingOverlayService : Service() {
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         settingsStore = SettingsStore(this)
         transcriptionLog = TranscriptionLog(this)
-        ttsAudioPlayer = TtsAudioPlayer(this)
+        ttsAudioPlayer = TtsAudioPlayer()
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
         createBubbleView()
@@ -127,44 +129,54 @@ class FloatingOverlayService : Service() {
             y = 200
         }
 
-        var initialX = 0
-        var initialY = 0
-        var initialTouchX = 0f
-        var initialTouchY = 0f
-        var moved = false
+        val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
+        val touchInterpreter = BubbleTouchInterpreter((touchSlop * touchSlop).toFloat())
+        var longPressRunnable: Runnable? = null
+
+        fun cancelLongPress() {
+            longPressRunnable?.let { container.removeCallbacks(it) }
+            longPressRunnable = null
+        }
 
         container.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    initialX = params.x
-                    initialY = params.y
-                    initialTouchX = event.rawX
-                    initialTouchY = event.rawY
-                    moved = false
+                    touchInterpreter.onDown(params.x, params.y, event.rawX, event.rawY)
+                    cancelLongPress()
+                    longPressRunnable = Runnable {
+                        if (touchInterpreter.onLongPress() == BubbleTouchAction.TogglePanel) {
+                            container.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                            toggleExpandedView()
+                        }
+                    }.also {
+                        container.postDelayed(it, ViewConfiguration.getLongPressTimeout().toLong())
+                    }
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    val dx = event.rawX - initialTouchX
-                    val dy = event.rawY - initialTouchY
-                    if (dx * dx + dy * dy > 100) moved = true
-                    params.x = initialX + dx.toInt()
-                    params.y = initialY + dy.toInt()
-                    windowManager.updateViewLayout(container, params)
+                    val action = touchInterpreter.onMove(event.rawX, event.rawY)
+                    if (action is BubbleTouchAction.DragTo) {
+                        cancelLongPress()
+                        params.x = action.x
+                        params.y = action.y
+                        windowManager.updateViewLayout(container, params)
+                    }
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (!moved) {
+                    cancelLongPress()
+                    if (touchInterpreter.onUp() == BubbleTouchAction.TapRecord) {
                         onBubbleTapped(icon)
                     }
                     true
                 }
+                MotionEvent.ACTION_CANCEL -> {
+                    cancelLongPress()
+                    touchInterpreter.onCancel()
+                    true
+                }
                 else -> false
             }
-        }
-
-        container.setOnLongClickListener {
-            toggleExpandedView()
-            true
         }
 
         windowManager.addView(container, params)
@@ -540,8 +552,9 @@ class FloatingOverlayService : Service() {
                     voice = settings.ttsVoice,
                     speed = settings.ttsSpeed
                 )
-                ttsAudioPlayer.playWav(audio)
+                Log.d(TAG, "TTS synthesized ${audio.size} bytes for clipboard playback")
                 Toast.makeText(this@FloatingOverlayService, "Playing clipboard", Toast.LENGTH_SHORT).show()
+                ttsAudioPlayer.playWav(audio)
             } catch (e: Exception) {
                 Toast.makeText(this@FloatingOverlayService, "TTS failed: ${e.message}", Toast.LENGTH_LONG).show()
                 Log.e(TAG, "TTS playback failed", e)

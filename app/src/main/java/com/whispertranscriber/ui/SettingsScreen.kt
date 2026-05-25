@@ -1,5 +1,6 @@
 package com.whispertranscriber.ui
 
+import android.util.Log
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -49,6 +50,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+private const val TAG = "SettingsScreen"
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -59,7 +62,7 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val ttsClient = remember { KokoroTtsClient() }
-    val ttsAudioPlayer = remember(context) { TtsAudioPlayer(context) }
+    val ttsAudioPlayer = remember(context) { TtsAudioPlayer() }
     DisposableEffect(ttsClient, ttsAudioPlayer) {
         onDispose {
             ttsAudioPlayer.stop()
@@ -408,8 +411,10 @@ fun SettingsScreen(
                                 if (selectedVoice != settings.ttsVoice) {
                                     settingsStore.updateTtsVoice(selectedVoice)
                                 }
+                                Log.d(TAG, "Loaded ${voices.size} Kokoro TTS voice(s) from $url")
                                 ttsDiscoveryStatus = "Loaded ${voices.size} voice(s)."
                             } catch (e: Exception) {
+                                Log.e(TAG, "TTS voice fetch failed", e)
                                 ttsDiscoveryStatus = "TTS connection failed: ${e.message}"
                             }
                             ttsTesting = false
@@ -504,10 +509,13 @@ fun SettingsScreen(
                                 voice = settings.ttsVoice,
                                 speed = displayTtsSpeed
                             )
-                            ttsAudioPlayer.playWav(audio)
+                            Log.d(TAG, "TTS synthesized ${audio.size} bytes for test playback")
                             settingsStore.updateTtsSpeed(displayTtsSpeed)
                             ttsDiscoveryStatus = "Playing ${settings.ttsVoice}."
+                            ttsAudioPlayer.playWav(audio)
+                            ttsDiscoveryStatus = "Played ${settings.ttsVoice}."
                         } catch (e: Exception) {
+                            Log.e(TAG, "TTS test playback failed", e)
                             ttsDiscoveryStatus = "TTS playback failed: ${e.message}"
                         }
                         ttsTesting = false
