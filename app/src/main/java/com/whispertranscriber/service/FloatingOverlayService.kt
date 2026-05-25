@@ -189,7 +189,7 @@ class FloatingOverlayService : Service() {
             updateExpandedViewText()
             realtimeInsertionActive = TranscriberAccessibilityService.beginRealtimeText()
             val serverUrl = try {
-                resolveServerUrl(settings.whisperServerUrl)
+                resolveServerUrl(settings.whisperServerUrl, settings.whisperServerPort)
             } catch (e: Exception) {
                 isRecording = false
                 activeRecordIcon = null
@@ -255,7 +255,7 @@ class FloatingOverlayService : Service() {
             val settings = settingsStore.settings.first()
             val startTime = System.currentTimeMillis()
             try {
-                val serverUrl = resolveServerUrl(settings.whisperServerUrl)
+                val serverUrl = resolveServerUrl(settings.whisperServerUrl, settings.whisperServerPort)
                 val session = liveKitSession
                 liveKitSession = null
                 val result = liveResult?.let {
@@ -342,10 +342,10 @@ class FloatingOverlayService : Service() {
         updateExpandedViewText()
     }
 
-    private suspend fun resolveServerUrl(configuredUrl: String): String {
+    private suspend fun resolveServerUrl(configuredUrl: String, discoveryPort: Int): String {
         if (configuredUrl.isNotBlank()) return configuredUrl
-        val discovered = WhisperServerDiscovery.discover()
-            ?: throw IllegalStateException("No WhisperLiveKit server found on local networks or Tailscale port 8090")
+        val discovered = WhisperServerDiscovery.discover(port = discoveryPort)
+            ?: throw IllegalStateException("No WhisperLiveKit server found on local networks or Tailscale port $discoveryPort")
         settingsStore.updateServerUrl(discovered.url)
         return discovered.url
     }

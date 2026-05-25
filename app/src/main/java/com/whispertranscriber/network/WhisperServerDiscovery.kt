@@ -1,5 +1,6 @@
 package com.whispertranscriber.network
 
+import com.google.gson.JsonParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -9,29 +10,52 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.Inet4Address
+import java.net.InetSocketAddress
 import java.net.NetworkInterface
+import java.net.Socket
 import java.net.URL
 
 object WhisperServerDiscovery {
-    private const val DEFAULT_PORT = 8090
+    const val DEFAULT_PORT = 8090
     private const val DEFAULT_TIMEOUT_MS = 350
     private const val MAX_PARALLEL_PROBES = 32
 
     suspend fun discover(
         port: Int = DEFAULT_PORT,
         timeoutMs: Int = DEFAULT_TIMEOUT_MS
-    ): DiscoveredWhisperServer? = withContext(Dispatchers.IO) {
-        val hosts = candidateHosts(localIpv4Addresses())
+    ): DiscoveredWhisperServer? = discoverAll(port, timeoutMs).firstOrNull()
+
+    suspend fun discoverAll(
+        port: Int = DEFAULT_PORT,
+        timeoutMs: Int = DEFAULT_TIMEOUT_MS
+    ): List<DiscoveredWhisperServer> {
+        return discoverFromHosts(
+            hosts = candidateHosts(localIpv4Addresses()),
+            ports = listOf(port),
+            timeoutMs = timeoutMs
+        )
+    }
+
+    suspend fun discoverFromHosts(
+        hosts: List<String>,
+        ports: List<Int>,
+        timeoutMs: Int = DEFAULT_TIMEOUT_MS
+    ): List<DiscoveredWhisperServer> = withContext(Dispatchers.IO) {
+        val candidates = hosts.distinct().flatMap { host ->
+            ports.distinct().mapNotNull { port ->
+                if (port in 1..65535) host to port else null
+            }
+        }
         val semaphore = Semaphore(MAX_PARALLEL_PROBES)
 
         coroutineScope {
-            hosts.map { host ->
+            candidates.map { (host, port) ->
                 async {
                     semaphore.withPermit {
                         probe(host, port, timeoutMs)
                     }
                 }
-            }.awaitAll().filterNotNull().firstOrNull()
+            }.awaitAll().filterNotNull().distinctBy { it.url }
         }
     }
 
@@ -63,6 +87,8 @@ object WhisperServerDiscovery {
     }
 
     private fun probe(host: String, port: Int, timeoutMs: Int): DiscoveredWhisperServer? {
+        if (!isPortOpen(host, port, timeoutMs)) return null
+
         val url = "http://$host:$port"
         val connection = (URL("$url/health").openConnection() as HttpURLConnection).apply {
             connectTimeout = timeoutMs
@@ -74,12 +100,35 @@ object WhisperServerDiscovery {
         return try {
             if (connection.responseCode != 200) return null
             val body = connection.inputStream.bufferedReader().use { it.readText() }
-            if (!body.contains("\"ready\":true") && !body.contains("\"status\":\"ok\"")) return null
+            if (!isHealthy(body)) return null
             DiscoveredWhisperServer(url)
         } catch (_: Exception) {
             null
         } finally {
             connection.disconnect()
+        }
+    }
+
+    private fun isPortOpen(host: String, port: Int, timeoutMs: Int): Boolean {
+        return try {
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress(host, port), timeoutMs)
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun isHealthy(body: String): Boolean {
+        return try {
+            val json = JsonParser.parseString(body).asJsonObject
+            val readyElement = json.get("ready")?.takeUnless { it.isJsonNull }
+            val ready = readyElement?.asBoolean
+            val status = json.get("status")?.takeUnless { it.isJsonNull }?.asString.orEmpty()
+            ready ?: (status.equals("ok", ignoreCase = true) || status.equals("healthy", ignoreCase = true))
+        } catch (_: Exception) {
+            false
         }
     }
 
