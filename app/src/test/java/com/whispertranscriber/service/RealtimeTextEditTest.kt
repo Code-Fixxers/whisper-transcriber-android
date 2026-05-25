@@ -60,6 +60,23 @@ class RealtimeTextEditTest {
     }
 
     @Test
+    fun firstUpdateTreatsVisibleHintTextAsEmptyField() {
+        val result = RealtimeTextEdit.apply(
+            fieldText = "Signal message",
+            selectionStart = 0,
+            selectionEnd = 0,
+            state = null,
+            transcript = "hello",
+            fieldHintText = "Signal message",
+            isShowingHintText = true
+        )
+
+        assertEquals("hello", result?.fieldText)
+        assertEquals(5, result?.selectionStart)
+        assertEquals(RealtimeTextEdit.State(start = 0, text = "hello"), result?.state)
+    }
+
+    @Test
     fun updateFailsWhenPreviousTranscriptNoLongerMatchesFieldText() {
         val result = RealtimeTextEdit.apply(
             fieldText = "user changed the field",

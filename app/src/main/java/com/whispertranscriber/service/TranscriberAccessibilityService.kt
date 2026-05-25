@@ -56,7 +56,9 @@ class TranscriberAccessibilityService : AccessibilityService() {
             selectionStart = focusedNode.textSelectionStart,
             selectionEnd = focusedNode.textSelectionEnd,
             state = null,
-            transcript = text
+            transcript = text,
+            fieldHintText = focusedNode.hintText?.toString(),
+            isShowingHintText = focusedNode.isShowingHintText
         ) ?: return false
         val result = applyTextEdit(focusedNode, edit)
         Log.d(TAG, "Text committed: $result")
@@ -77,7 +79,9 @@ class TranscriberAccessibilityService : AccessibilityService() {
             selectionStart = focusedNode.textSelectionStart,
             selectionEnd = focusedNode.textSelectionEnd,
             state = realtimeState,
-            transcript = text
+            transcript = text,
+            fieldHintText = focusedNode.hintText?.toString(),
+            isShowingHintText = focusedNode.isShowingHintText
         ) ?: run {
             realtimeState = null
             return false

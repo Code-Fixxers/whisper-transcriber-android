@@ -18,7 +18,9 @@ object RealtimeTextEdit {
         selectionStart: Int,
         selectionEnd: Int,
         state: State?,
-        transcript: String
+        transcript: String,
+        fieldHintText: String? = null,
+        isShowingHintText: Boolean = false
     ): Result? {
         if (state != null) {
             val start = state.start
@@ -36,11 +38,17 @@ object RealtimeTextEdit {
             )
         }
 
-        val safeStart = selectionStart.takeIf { it in 0..fieldText.length } ?: fieldText.length
-        val safeEnd = selectionEnd.takeIf { it in 0..fieldText.length } ?: safeStart
+        val effectiveFieldText = if (isShowingHintText) "" else fieldText
+        val effectiveSelectionStart = if (isShowingHintText && fieldText == fieldHintText) 0 else selectionStart
+        val effectiveSelectionEnd = if (isShowingHintText && fieldText == fieldHintText) 0 else selectionEnd
+        val safeStart = effectiveSelectionStart.takeIf { it in 0..effectiveFieldText.length }
+            ?: effectiveFieldText.length
+        val safeEnd = effectiveSelectionEnd.takeIf { it in 0..effectiveFieldText.length } ?: safeStart
         val rangeStart = minOf(safeStart, safeEnd)
         val rangeEnd = maxOf(safeStart, safeEnd)
-        val newText = fieldText.substring(0, rangeStart) + transcript + fieldText.substring(rangeEnd)
+        val newText = effectiveFieldText.substring(0, rangeStart) +
+            transcript +
+            effectiveFieldText.substring(rangeEnd)
         val cursor = rangeStart + transcript.length
 
         return Result(
