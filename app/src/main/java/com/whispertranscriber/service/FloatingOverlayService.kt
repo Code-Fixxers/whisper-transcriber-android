@@ -33,6 +33,7 @@ import com.whispertranscriber.network.WhisperApiClient
 import com.whispertranscriber.network.WhisperLiveKitClient
 import com.whispertranscriber.network.WhisperLiveKitSession
 import com.whispertranscriber.network.WhisperServerDiscovery
+import com.whispertranscriber.network.TranscriptionResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -66,6 +67,10 @@ class FloatingOverlayService : Service() {
     private var transcriptionJob: Job? = null
     private var liveKitSession: WhisperLiveKitSession? = null
     private var liveKitReady = false
+    private var activeRecordIcon: ImageView? = null
+    private var recordingCompletionStarted = false
+    private var realtimeInsertionActive = false
+    private var realtimeInsertionFailed = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -173,14 +178,22 @@ class FloatingOverlayService : Service() {
             val settings = settingsStore.settings.first()
             isRecording = true
             liveKitReady = false
+            recordingCompletionStarted = false
+            realtimeInsertionActive = false
+            realtimeInsertionFailed = false
+            activeRecordIcon = icon
             icon.setBackgroundResource(R.drawable.bubble_recording)
             icon.setImageResource(R.drawable.ic_stop)
             transcriptionText = "Discovering..."
             updateExpandedViewText()
+            realtimeInsertionActive = TranscriberAccessibilityService.beginRealtimeText()
             val serverUrl = try {
                 resolveServerUrl(settings.whisperServerUrl)
             } catch (e: Exception) {
                 isRecording = false
+                activeRecordIcon = null
+                realtimeInsertionActive = false
+                TranscriberAccessibilityService.finishRealtimeText()
                 icon.setBackgroundResource(R.drawable.bubble_background)
                 icon.setImageResource(R.drawable.ic_mic)
                 transcriptionText = "Error: ${e.message}"
@@ -188,20 +201,30 @@ class FloatingOverlayService : Service() {
                 return@launch
             }
             liveKitSession = try {
-                liveKitClient.connect(serverUrl) { partial ->
-                    serviceScope.launch {
-                        transcriptionText = partial
-                        updateExpandedViewText()
+                liveKitClient.connect(
+                    serverUrl = serverUrl,
+                    onPartial = { partial ->
+                        serviceScope.launch {
+                            handleLivePartial(partial)
+                        }
+                    },
+                    onReadyToStop = { result ->
+                        serviceScope.launch {
+                            finishRecording(result)
+                        }
                     }
-                }.also {
+                ).also {
                     liveKitReady = true
                     transcriptionText = "Listening..."
                     updateExpandedViewText()
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Live streaming unavailable, using REST fallback", e)
+                realtimeInsertionActive = false
+                TranscriberAccessibilityService.finishRealtimeText()
                 null
             }
+            if (!isRecording || recordingCompletionStarted) return@launch
             audioRecorder.startRecording(if (liveKitReady) "medium" else settings.audioQuality) { chunk ->
                 liveKitSession?.sendPcm(chunk)
             }
@@ -210,9 +233,16 @@ class FloatingOverlayService : Service() {
     }
 
     private fun stopRecording(icon: ImageView) {
+        activeRecordIcon = icon
+        finishRecording()
+    }
+
+    private fun finishRecording(liveResult: TranscriptionResult? = null) {
+        if (!isRecording || recordingCompletionStarted) return
+        recordingCompletionStarted = true
         isRecording = false
-        icon.setBackgroundResource(R.drawable.bubble_background)
-        icon.setImageResource(R.drawable.ic_mic)
+        activeRecordIcon?.setBackgroundResource(R.drawable.bubble_background)
+        activeRecordIcon?.setImageResource(R.drawable.ic_mic)
 
         val wavData = audioRecorder.stopRecording()
         Log.d(TAG, "Recording stopped, WAV size: ${wavData.size} bytes")
@@ -227,7 +257,7 @@ class FloatingOverlayService : Service() {
                 val serverUrl = resolveServerUrl(settings.whisperServerUrl)
                 val session = liveKitSession
                 liveKitSession = null
-                val result = if (liveKitReady && session != null) {
+                val result = liveResult ?: if (liveKitReady && session != null) {
                     try {
                         session.finish()
                     } catch (e: Exception) {
@@ -250,8 +280,10 @@ class FloatingOverlayService : Service() {
                     outputText(result.text)
                 } else if (result.success) {
                     transcriptionText = "(No speech detected)"
+                    finishRealtimeInsertion()
                 } else {
                     transcriptionText = "Error: ${result.error}"
+                    finishRealtimeInsertion()
                 }
                 transcriptionLog.addEntry(
                     durationMs = elapsed,
@@ -263,6 +295,7 @@ class FloatingOverlayService : Service() {
                 liveKitReady = false
                 liveKitSession?.cancel()
                 liveKitSession = null
+                finishRealtimeInsertion()
                 val elapsed = System.currentTimeMillis() - startTime
                 transcriptionText = "Error: ${e.message}"
                 transcriptionLog.addEntry(
@@ -273,8 +306,24 @@ class FloatingOverlayService : Service() {
                 )
                 Log.e(TAG, "Transcription failed", e)
             }
+            activeRecordIcon = null
+            recordingCompletionStarted = false
             updateExpandedViewText()
         }
+    }
+
+    private fun handleLivePartial(partial: String) {
+        transcriptionText = partial
+        if (realtimeInsertionActive) {
+            val updated = TranscriberAccessibilityService.updateRealtimeText(partial)
+            if (!updated) {
+                realtimeInsertionActive = false
+                realtimeInsertionFailed = true
+                TranscriberAccessibilityService.finishRealtimeText()
+                Log.d(TAG, "Realtime field update failed; final transcript will use clipboard")
+            }
+        }
+        updateExpandedViewText()
     }
 
     private suspend fun resolveServerUrl(configuredUrl: String): String {
@@ -389,17 +438,36 @@ class FloatingOverlayService : Service() {
     }
 
     private fun outputText(text: String) {
-        // Always copy to clipboard
+        if (realtimeInsertionActive) {
+            val updated = TranscriberAccessibilityService.updateRealtimeText(text)
+            finishRealtimeInsertion()
+            if (updated) {
+                Log.d(TAG, "Realtime text finalized in focused field")
+                return
+            }
+            realtimeInsertionFailed = true
+        } else {
+            finishRealtimeInsertion()
+        }
+
+        if (!realtimeInsertionFailed && TranscriberAccessibilityService.pasteText(text)) {
+            Log.d(TAG, "Text pasted into focused field")
+            return
+        }
+
+        copyFinalTextToClipboard(text)
+        Log.d(TAG, "No focused field, copied final transcript to clipboard")
+    }
+
+    private fun finishRealtimeInsertion() {
+        realtimeInsertionActive = false
+        TranscriberAccessibilityService.finishRealtimeText()
+    }
+
+    private fun copyFinalTextToClipboard(text: String) {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("Transcription", text))
-
-        // Try to paste into the focused text field via accessibility
-        if (TranscriberAccessibilityService.pasteText(text)) {
-            Log.d(TAG, "Text pasted into focused field")
-        } else {
-            Toast.makeText(this, "Copied to clipboard", Toast.LENGTH_SHORT).show()
-            Log.d(TAG, "No focused field, copied to clipboard")
-        }
+        Toast.makeText(this, "Copied to clipboard", Toast.LENGTH_SHORT).show()
     }
 
     private fun copyToClipboard() {

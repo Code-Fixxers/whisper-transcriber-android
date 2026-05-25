@@ -1,16 +1,17 @@
 # Whisper Transcriber
 
-Android floating overlay app for voice-to-text using a self-hosted [WhisperLiveKit](https://github.com/QuentinFuxa/WhisperLiveKit) server. Tap the bubble, speak, and the transcription is typed directly into whatever text field you're using.
+Android floating overlay app for voice-to-text using a self-hosted [WhisperLiveKit](https://github.com/QuentinFuxa/WhisperLiveKit) server. Tap the bubble, speak, and the transcription streams directly into the active text field.
 
 Works over Tailscale / ZeroTier — just point it at your server's VPN IP.
 
 ## How it works
 
 1. A floating bubble sits over all apps (like Messenger chat heads)
-2. Tap to start recording, tap again to stop
+2. Tap to start recording; WhisperLiveKit silence detection stops the capture, or tap again to stop manually
 3. Audio is streamed to WhisperLiveKit via native WebSocket (`/asr`) when PCM input is enabled
-4. If live streaming is unavailable, the app falls back to the OpenAI-compatible REST API (`/v1/audio/transcriptions`)
-5. Transcribed text is automatically typed into the focused input field (or copied to clipboard)
+4. Partial transcripts replace the in-progress text in the focused input field in real time
+5. If no editable field is focused, the final transcript is copied to the clipboard once the utterance is silent
+6. If live streaming is unavailable, the app falls back to the OpenAI-compatible REST API (`/v1/audio/transcriptions`)
 
 ## Setup
 
@@ -114,7 +115,7 @@ println!("{}", result.text);
 
 ## Updates
 
-The app checks a rolling GitHub Release manifest at `app-latest`. When a newer `versionCode` is available, it downloads `app.apk`, verifies size and SHA-256, then hands off to Android's package installer. Android still requires user approval, and APK signing must stay consistent between builds. CI currently publishes the debug-signed APK because no release signing key is configured in this repo.
+The app checks a rolling GitHub Release manifest at `app-latest`. When a newer `versionCode` is available, it downloads `app.apk`, verifies size and SHA-256, then hands off to Android's package installer. Android still requires user approval, and APK signing must stay consistent between builds. CI publishes the release-signed APK directly as `app.apk`.
 
 ## Network notes
 

@@ -24,7 +24,8 @@ class WhisperLiveKitClient {
 
     suspend fun connect(
         serverUrl: String,
-        onPartial: (String) -> Unit
+        onPartial: (String) -> Unit,
+        onReadyToStop: (TranscriptionResult) -> Unit = {}
     ): WhisperLiveKitSession = withContext(Dispatchers.IO) {
         val opened = CompletableDeferred<Unit>()
         val config = CompletableDeferred<Boolean>()
@@ -60,7 +61,9 @@ class WhisperLiveKitClient {
 
                     if (result.readyToStop && !finalResult.isCompleted) {
                         val textValue = synchronized(latestText) { latestText.toString() }
-                        finalResult.complete(TranscriptionResult(success = true, text = textValue.trim()))
+                        val transcriptionResult = TranscriptionResult(success = true, text = textValue.trim())
+                        finalResult.complete(transcriptionResult)
+                        onReadyToStop(transcriptionResult)
                         webSocket.close(1000, "done")
                     }
                 } catch (e: Exception) {

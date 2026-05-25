@@ -17,8 +17,22 @@ class TranscriberAccessibilityService : AccessibilityService() {
             return instance?.commitText(text) ?: false
         }
 
+        fun beginRealtimeText(): Boolean {
+            return instance?.beginRealtimeTextSession() ?: false
+        }
+
+        fun updateRealtimeText(text: String): Boolean {
+            return instance?.updateRealtimeTextSession(text) ?: false
+        }
+
+        fun finishRealtimeText() {
+            instance?.finishRealtimeTextSession()
+        }
+
         fun isAvailable(): Boolean = instance != null
     }
+
+    private var realtimeState: RealtimeTextEdit.State? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -36,41 +50,79 @@ class TranscriberAccessibilityService : AccessibilityService() {
     }
 
     private fun commitText(text: String): Boolean {
-        val rootNode = rootInActiveWindow ?: return false
-        val focusedNode = rootNode.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-        if (focusedNode == null || !focusedNode.isEditable) {
-            Log.d(TAG, "No focused editable field found")
+        val focusedNode = focusedEditableNode() ?: return false
+        val edit = RealtimeTextEdit.apply(
+            fieldText = focusedNode.text?.toString() ?: "",
+            selectionStart = focusedNode.textSelectionStart,
+            selectionEnd = focusedNode.textSelectionEnd,
+            state = null,
+            transcript = text
+        ) ?: return false
+        val result = applyTextEdit(focusedNode, edit)
+        Log.d(TAG, "Text committed: $result")
+        return result
+    }
+
+    private fun beginRealtimeTextSession(): Boolean {
+        realtimeState = null
+        return focusedEditableNode() != null
+    }
+
+    private fun updateRealtimeTextSession(text: String): Boolean {
+        if (text.isBlank()) return true
+
+        val focusedNode = focusedEditableNode() ?: return false
+        val edit = RealtimeTextEdit.apply(
+            fieldText = focusedNode.text?.toString() ?: "",
+            selectionStart = focusedNode.textSelectionStart,
+            selectionEnd = focusedNode.textSelectionEnd,
+            state = realtimeState,
+            transcript = text
+        ) ?: run {
+            realtimeState = null
             return false
         }
 
-        // Get existing text and cursor position
-        val existing = focusedNode.text?.toString() ?: ""
-        val selStart = focusedNode.textSelectionStart
-        val selEnd = focusedNode.textSelectionEnd
-
-        // Insert at cursor position, or append if no valid cursor
-        val newText = if (selStart >= 0 && selEnd >= 0 && selStart <= existing.length) {
-            existing.substring(0, selStart) + text + existing.substring(selEnd.coerceAtMost(existing.length))
+        val result = applyTextEdit(focusedNode, edit)
+        if (result) {
+            realtimeState = edit.state
         } else {
-            existing + text
+            realtimeState = null
         }
+        return result
+    }
 
+    private fun finishRealtimeTextSession() {
+        realtimeState = null
+    }
+
+    private fun focusedEditableNode(): AccessibilityNodeInfo? {
+        val rootNode = rootInActiveWindow ?: return null
+        val focusedNode = rootNode.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+        if (focusedNode == null || !focusedNode.isEditable) {
+            Log.d(TAG, "No focused editable field found")
+            return null
+        }
+        return focusedNode
+    }
+
+    private fun applyTextEdit(
+        focusedNode: AccessibilityNodeInfo,
+        edit: RealtimeTextEdit.Result
+    ): Boolean {
         val args = Bundle().apply {
-            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, newText)
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, edit.fieldText)
         }
         val result = focusedNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
 
-        // Move cursor to end of inserted text
         if (result) {
-            val newCursorPos = if (selStart >= 0) selStart + text.length else newText.length
             val cursorArgs = Bundle().apply {
-                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, newCursorPos)
-                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, newCursorPos)
+                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, edit.selectionStart)
+                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, edit.selectionEnd)
             }
             focusedNode.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, cursorArgs)
         }
 
-        Log.d(TAG, "Text committed: $result")
         return result
     }
 }
