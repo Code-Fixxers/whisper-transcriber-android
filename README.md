@@ -11,7 +11,8 @@ Works over Tailscale / ZeroTier — just point it at your server's VPN IP.
 3. Audio is streamed to WhisperLiveKit via native WebSocket (`/asr`) when PCM input is enabled
 4. Partial transcripts replace the in-progress text in the focused input field in real time
 5. If no editable field is focused, the final transcript is copied to the clipboard once the utterance is silent
-6. If live streaming is unavailable, the app falls back to the OpenAI-compatible REST API (`/v1/audio/transcriptions`)
+6. Optional Kokoro TTS can read clipboard text aloud through the overlay
+7. If live streaming is unavailable, the app falls back to the OpenAI-compatible REST API (`/v1/audio/transcriptions`)
 
 ## Setup
 
@@ -23,6 +24,8 @@ Run [WhisperLiveKit](https://github.com/QuentinFuxa/WhisperLiveKit) on your mach
 whisperlivekit-server --host 0.0.0.0 --port 8090 --pcm-input
 ```
 
+For TTS, run Kokoro-FastAPI on your machine or tailnet. The app discovers healthy TTS servers on port `8880` by default and uses the OpenAI-compatible `/v1/audio/speech` endpoint.
+
 ### App
 
 1. Install the APK (grab from [Actions artifacts](../../actions) or build yourself)
@@ -33,6 +36,7 @@ whisperlivekit-server --host 0.0.0.0 --port 8090 --pcm-input
    - **Notifications** — for the foreground service
 4. Enable the **Whisper Transcriber** accessibility service in Android Settings → Accessibility (needed to type into other apps' text fields)
 5. Tap **Start Overlay** — the floating bubble appears
+6. Optional: in **Settings → Text To Speech**, discover your Kokoro server, test the connection to load voices, pick a voice/speed, and play sample text
 
 ### Permissions
 
@@ -122,6 +126,7 @@ The app checks a rolling GitHub Release manifest at `app-latest`. When a newer `
 - **HTTP / ws://** works out of the box to any IP (cleartext traffic is allowed via network security config)
 - **HTTPS with self-signed certs** works — the client trusts all certificates (this is a private VPN tool, not a public app)
 - Works over **Tailscale**, **ZeroTier**, or any VPN — just use the VPN IP as the server URL
+- Long-press the overlay to open the panel, then tap **SPEAK** to read the current clipboard with the selected Kokoro voice
 
 ## Live endpoint probe
 

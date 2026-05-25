@@ -27,8 +27,10 @@ import android.widget.Toast
 import com.whispertranscriber.MainActivity
 import com.whispertranscriber.R
 import com.whispertranscriber.audio.AudioRecorder
+import com.whispertranscriber.audio.TtsAudioPlayer
 import com.whispertranscriber.data.SettingsStore
 import com.whispertranscriber.data.TranscriptionLog
+import com.whispertranscriber.network.KokoroTtsClient
 import com.whispertranscriber.network.WhisperApiClient
 import com.whispertranscriber.network.WhisperLiveKitClient
 import com.whispertranscriber.network.WhisperLiveKitSession
@@ -58,7 +60,9 @@ class FloatingOverlayService : Service() {
     private val audioRecorder = AudioRecorder()
     private val whisperClient = WhisperApiClient()
     private val liveKitClient = WhisperLiveKitClient()
+    private val ttsClient = KokoroTtsClient()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private lateinit var ttsAudioPlayer: TtsAudioPlayer
 
     private var bubbleView: View? = null
     private var expandedView: View? = null
@@ -80,6 +84,7 @@ class FloatingOverlayService : Service() {
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         settingsStore = SettingsStore(this)
         transcriptionLog = TranscriptionLog(this)
+        ttsAudioPlayer = TtsAudioPlayer(this)
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
         createBubbleView()
@@ -350,6 +355,14 @@ class FloatingOverlayService : Service() {
         return discovered.url
     }
 
+    private suspend fun resolveTtsServerUrl(configuredUrl: String, discoveryPort: Int): String {
+        if (configuredUrl.isNotBlank()) return configuredUrl
+        val discovered = WhisperServerDiscovery.discover(port = discoveryPort)
+            ?: throw IllegalStateException("No Kokoro TTS server found on local networks or Tailscale port $discoveryPort")
+        settingsStore.updateTtsServerUrl(discovered.url)
+        return discovered.url
+    }
+
     private fun toggleExpandedView() {
         if (isExpanded) {
             removeExpandedView()
@@ -393,6 +406,15 @@ class FloatingOverlayService : Service() {
             setOnClickListener { copyToClipboard() }
         }
         titleBar.addView(copyButton)
+
+        val speakButton = TextView(this).apply {
+            text = "SPEAK"
+            textSize = 12f
+            setTextColor(0xFF6750A4.toInt())
+            setPadding((8 * density).toInt(), (4 * density).toInt(), (8 * density).toInt(), (4 * density).toInt())
+            setOnClickListener { speakClipboardText() }
+        }
+        titleBar.addView(speakButton)
 
         val closeButton = TextView(this).apply {
             text = "X"
@@ -493,6 +515,40 @@ class FloatingOverlayService : Service() {
         Toast.makeText(this, "Copied to clipboard", Toast.LENGTH_SHORT).show()
     }
 
+    private fun speakClipboardText() {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val text = clipboard.primaryClip
+            ?.takeIf { it.itemCount > 0 }
+            ?.getItemAt(0)
+            ?.coerceToText(this)
+            ?.toString()
+            ?.trim()
+            .orEmpty()
+
+        if (text.isBlank()) {
+            Toast.makeText(this, "Clipboard is empty", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        serviceScope.launch {
+            try {
+                val settings = settingsStore.settings.first()
+                val serverUrl = resolveTtsServerUrl(settings.ttsServerUrl, settings.ttsServerPort)
+                val audio = ttsClient.synthesizeWav(
+                    serverUrl = serverUrl,
+                    text = text,
+                    voice = settings.ttsVoice,
+                    speed = settings.ttsSpeed
+                )
+                ttsAudioPlayer.playWav(audio)
+                Toast.makeText(this@FloatingOverlayService, "Playing clipboard", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(this@FloatingOverlayService, "TTS failed: ${e.message}", Toast.LENGTH_LONG).show()
+                Log.e(TAG, "TTS playback failed", e)
+            }
+        }
+    }
+
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
             CHANNEL_ID,
@@ -532,8 +588,10 @@ class FloatingOverlayService : Service() {
         transcriptionJob?.cancel()
         serviceScope.cancel()
         audioRecorder.release()
+        ttsAudioPlayer.stop()
         whisperClient.shutdown()
         liveKitClient.shutdown()
+        ttsClient.shutdown()
         removeExpandedView()
         bubbleView?.let {
             try {
