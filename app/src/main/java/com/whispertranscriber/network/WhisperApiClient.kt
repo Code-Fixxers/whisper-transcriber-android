@@ -109,3 +109,6 @@ data class TranscriptionResult(
     val text: String,
     val error: String? = null
 )
+
+fun TranscriptionResult.shouldRetryRestAfterLive(): Boolean =
+    success && text.isBlank()

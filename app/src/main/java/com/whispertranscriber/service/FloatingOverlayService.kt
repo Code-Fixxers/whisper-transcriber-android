@@ -34,6 +34,7 @@ import com.whispertranscriber.network.WhisperLiveKitClient
 import com.whispertranscriber.network.WhisperLiveKitSession
 import com.whispertranscriber.network.WhisperServerDiscovery
 import com.whispertranscriber.network.TranscriptionResult
+import com.whispertranscriber.network.shouldRetryRestAfterLive
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -257,9 +258,11 @@ class FloatingOverlayService : Service() {
                 val serverUrl = resolveServerUrl(settings.whisperServerUrl)
                 val session = liveKitSession
                 liveKitSession = null
-                val result = liveResult ?: if (liveKitReady && session != null) {
+                val result = liveResult?.let {
+                    retryRestIfLiveResultIsBlank(serverUrl, wavData, it)
+                } ?: if (liveKitReady && session != null) {
                     try {
-                        session.finish()
+                        retryRestIfLiveResultIsBlank(serverUrl, wavData, session.finish())
                     } catch (e: Exception) {
                         Log.w(TAG, "Live transcription finalization failed, retrying with REST", e)
                         whisperClient.transcribe(
@@ -310,6 +313,19 @@ class FloatingOverlayService : Service() {
             recordingCompletionStarted = false
             updateExpandedViewText()
         }
+    }
+
+    private suspend fun retryRestIfLiveResultIsBlank(
+        serverUrl: String,
+        wavData: ByteArray,
+        liveResult: TranscriptionResult
+    ): TranscriptionResult {
+        if (!liveResult.shouldRetryRestAfterLive()) return liveResult
+        Log.w(TAG, "Live transcription returned empty text, retrying with REST")
+        return whisperClient.transcribe(
+            serverUrl = serverUrl,
+            audioData = wavData
+        )
     }
 
     private fun handleLivePartial(partial: String) {
