@@ -26,17 +26,19 @@ whisperlivekit-server --host 0.0.0.0 --port 8090 --pcm-input
 
 For TTS, run Kokoro-FastAPI on your machine or tailnet. The app discovers healthy TTS servers on port `8880` by default and uses the OpenAI-compatible `/v1/audio/speech` endpoint.
 
+LiteLLM/OpenAI-compatible proxies are supported for REST STT and TTS. Set the proxy URL manually, add the matching STT/TTS API key in Settings, and use the proxy model name for TTS, for example `kokoro-tts`. Some proxies do not expose `/v1/audio/voices`; in that case enter the voice name manually.
+
 ### App
 
 1. Install the APK (grab from [Actions artifacts](../../actions) or build yourself)
-2. Open the app. Leave the server URL blank to auto-discover WhisperLiveKit on local networks and Tailscale port `8090`, or set a URL manually in **Settings**.
+2. Open the app. Leave the server URL blank to auto-discover WhisperLiveKit on local networks and Tailscale port `8090`, or set a URL manually in **Settings**. If the endpoint requires auth, fill **STT API Key**; the app sends it as `Authorization: Bearer ...`.
 3. Grant permissions when prompted:
    - **Microphone** — for recording audio
    - **Display over other apps** — for the floating bubble
    - **Notifications** — for the foreground service
 4. Enable the **Whisper Transcriber** accessibility service in Android Settings → Accessibility (needed to type into other apps' text fields)
 5. Tap **Start Overlay** — the floating bubble appears
-6. Optional: in **Settings → Text To Speech**, discover your Kokoro server, test the connection to load voices, pick a voice/speed, and play sample text
+6. Optional: in **Settings → Text To Speech**, discover your Kokoro server, test the connection to load voices, pick a model/voice/speed, and play sample text. If the endpoint requires auth, fill **TTS API Key**.
 
 ### Permissions
 

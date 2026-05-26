@@ -24,6 +24,7 @@ class WhisperLiveKitClient {
 
     suspend fun connect(
         serverUrl: String,
+        apiKey: String = "",
         onPartial: (String) -> Unit,
         onReadyToStop: (TranscriptionResult) -> Unit = {}
     ): WhisperLiveKitSession = withContext(Dispatchers.IO) {
@@ -34,6 +35,7 @@ class WhisperLiveKitClient {
 
         val request = Request.Builder()
             .url(toWebSocketUrl(serverUrl))
+            .withBearerAuth(apiKey)
             .build()
 
         lateinit var socket: WebSocket

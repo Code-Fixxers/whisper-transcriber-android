@@ -46,6 +46,7 @@ class WhisperApiClient {
     suspend fun transcribe(
         serverUrl: String,
         audioData: ByteArray,
+        apiKey: String = "",
         fileName: String = "audio.wav"
     ): TranscriptionResult = withContext(Dispatchers.IO) {
         val url = serverUrl.trimEnd('/') + "/v1/audio/transcriptions"
@@ -60,6 +61,7 @@ class WhisperApiClient {
 
         val request = Request.Builder()
             .url(url)
+            .withBearerAuth(apiKey)
             .post(multipartBody)
             .build()
 

@@ -23,10 +23,11 @@ class KokoroTtsClient {
         .readTimeout(120, TimeUnit.SECONDS)
         .build()
 
-    suspend fun voices(serverUrl: String): List<String> = withContext(Dispatchers.IO) {
+    suspend fun voices(serverUrl: String, apiKey: String = ""): List<String> = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url(serverUrl.trimEnd('/') + "/v1/audio/voices")
             .header("Cache-Control", "no-cache")
+            .withBearerAuth(apiKey)
             .build()
         val response = client.newCall(request).await()
         response.use {
@@ -35,15 +36,31 @@ class KokoroTtsClient {
         }
     }
 
+    suspend fun models(serverUrl: String, apiKey: String = ""): List<String> = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url(serverUrl.trimEnd('/') + "/v1/models")
+            .header("Cache-Control", "no-cache")
+            .withBearerAuth(apiKey)
+            .build()
+        val response = client.newCall(request).await()
+        response.use {
+            if (!it.isSuccessful) throw IOException("Models HTTP ${it.code}")
+            OpenAiModelParser.parse(it.body?.string().orEmpty())
+        }
+    }
+
     suspend fun synthesizeWav(
         serverUrl: String,
         text: String,
         voice: String,
-        speed: Float
+        speed: Float,
+        apiKey: String = "",
+        model: String = "kokoro"
     ): ByteArray = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url(serverUrl.trimEnd('/') + "/v1/audio/speech")
-            .post(KokoroSpeechRequest.json(text, voice, speed).toRequestBody("application/json".toMediaType()))
+            .withBearerAuth(apiKey)
+            .post(KokoroSpeechRequest.json(text, voice, speed, model).toRequestBody("application/json".toMediaType()))
             .build()
         val response = client.newCall(request).await()
         response.use {
@@ -81,10 +98,26 @@ object KokoroVoiceParser {
     }
 }
 
+object OpenAiModelParser {
+    fun parse(jsonText: String): List<String> {
+        val json = JsonParser.parseString(jsonText).asJsonObject
+        return json.getAsJsonArray("data")
+            ?.mapNotNull { element ->
+                element.takeUnless { it.isJsonNull }
+                    ?.asJsonObject
+                    ?.get("id")
+                    ?.takeUnless { it.isJsonNull }
+                    ?.asString
+            }
+            ?.filter { it.isNotBlank() }
+            .orEmpty()
+    }
+}
+
 object KokoroSpeechRequest {
-    fun json(text: String, voice: String, speed: Float): String {
+    fun json(text: String, voice: String, speed: Float, model: String = "kokoro"): String {
         val request = JsonObject().apply {
-            addProperty("model", "kokoro")
+            addProperty("model", model.ifBlank { "kokoro" })
             addProperty("input", text)
             addProperty("voice", voice)
             addProperty("response_format", "wav")

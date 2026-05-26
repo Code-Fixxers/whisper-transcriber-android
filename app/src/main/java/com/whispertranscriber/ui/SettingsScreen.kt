@@ -39,6 +39,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.whispertranscriber.audio.TtsAudioPlayer
@@ -222,6 +223,19 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(
+                value = settings.whisperApiKey,
+                onValueChange = { newValue ->
+                    scope.launch { settingsStore.updateWhisperApiKey(newValue) }
+                },
+                label = { Text("STT API Key") },
+                placeholder = { Text("Optional Bearer token") },
+                modifier = Modifier.fillMaxWidth(),
+                visualTransformation = PasswordVisualTransformation(),
+                singleLine = true
+            )
+
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
                 value = displayPort,
                 onValueChange = { rawValue ->
                     val newValue = rawValue.filter { it.isDigit() }.take(5)
@@ -341,6 +355,31 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(
+                value = settings.ttsApiKey,
+                onValueChange = { newValue ->
+                    scope.launch { settingsStore.updateTtsApiKey(newValue) }
+                },
+                label = { Text("TTS API Key") },
+                placeholder = { Text("Optional Bearer token") },
+                modifier = Modifier.fillMaxWidth(),
+                visualTransformation = PasswordVisualTransformation(),
+                singleLine = true
+            )
+
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = settings.ttsModel,
+                onValueChange = { newValue ->
+                    scope.launch { settingsStore.updateTtsModel(newValue) }
+                },
+                label = { Text("TTS Model") },
+                placeholder = { Text("kokoro or kokoro-tts") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
                 value = displayTtsPort,
                 onValueChange = { rawValue ->
                     val newValue = rawValue.filter { it.isDigit() }.take(5)
@@ -401,7 +440,7 @@ fun SettingsScreen(
                         ttsDiscoveryStatus = "Fetching voices..."
                         scope.launch {
                             try {
-                                val voices = ttsClient.voices(url)
+                                val voices = ttsClient.voices(url, settings.ttsApiKey)
                                 ttsVoices = voices
                                 val selectedVoice = when {
                                     settings.ttsVoice in voices -> settings.ttsVoice
@@ -415,7 +454,21 @@ fun SettingsScreen(
                                 ttsDiscoveryStatus = "Loaded ${voices.size} voice(s)."
                             } catch (e: Exception) {
                                 Log.e(TAG, "TTS voice fetch failed", e)
-                                ttsDiscoveryStatus = "TTS connection failed: ${e.message}"
+                                ttsDiscoveryStatus = if (e.message?.contains("404") == true) {
+                                    try {
+                                        val models = ttsClient.models(url, settings.ttsApiKey)
+                                        val modelHint = models.firstOrNull { it.contains("tts", ignoreCase = true) }
+                                        if (modelHint != null && settings.ttsModel.isBlank()) {
+                                            settingsStore.updateTtsModel(modelHint)
+                                        }
+                                        "Connected. Voice list unavailable; enter voice manually."
+                                    } catch (modelsError: Exception) {
+                                        Log.e(TAG, "TTS model fetch failed", modelsError)
+                                        "Voice list unavailable, and model check failed: ${modelsError.message}"
+                                    }
+                                } else {
+                                    "TTS connection failed: ${e.message}"
+                                }
                             }
                             ttsTesting = false
                         }
@@ -440,8 +493,9 @@ fun SettingsScreen(
             ) {
                 OutlinedTextField(
                     value = settings.ttsVoice,
-                    onValueChange = {},
-                    readOnly = true,
+                    onValueChange = { newValue ->
+                        scope.launch { settingsStore.updateTtsVoice(newValue) }
+                    },
                     label = { Text("Voice") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = ttsVoiceDropdownExpanded) },
                     modifier = Modifier
@@ -507,7 +561,9 @@ fun SettingsScreen(
                                 serverUrl = url,
                                 text = text,
                                 voice = settings.ttsVoice,
-                                speed = displayTtsSpeed
+                                speed = displayTtsSpeed,
+                                apiKey = settings.ttsApiKey,
+                                model = settings.ttsModel
                             )
                             Log.d(TAG, "TTS synthesized ${audio.size} bytes for test playback")
                             settingsStore.updateTtsSpeed(displayTtsSpeed)

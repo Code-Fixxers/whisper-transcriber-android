@@ -17,9 +17,12 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 data class AppSettings(
     val whisperServerUrl: String = "",
     val whisperServerPort: Int = WhisperServerDiscovery.DEFAULT_PORT,
+    val whisperApiKey: String = "",
     val audioQuality: String = "medium",
     val ttsServerUrl: String = "",
     val ttsServerPort: Int = 8880,
+    val ttsApiKey: String = "",
+    val ttsModel: String = "kokoro",
     val ttsVoice: String = "af_heart",
     val ttsSpeed: Float = 1.0f
 )
@@ -29,9 +32,12 @@ class SettingsStore(private val context: Context) {
     companion object {
         private val KEY_SERVER_URL = stringPreferencesKey("whisper_server_url")
         private val KEY_SERVER_PORT = intPreferencesKey("whisper_server_port")
+        private val KEY_WHISPER_API_KEY = stringPreferencesKey("whisper_api_key")
         private val KEY_AUDIO_QUALITY = stringPreferencesKey("audio_quality")
         private val KEY_TTS_SERVER_URL = stringPreferencesKey("tts_server_url")
         private val KEY_TTS_SERVER_PORT = intPreferencesKey("tts_server_port")
+        private val KEY_TTS_API_KEY = stringPreferencesKey("tts_api_key")
+        private val KEY_TTS_MODEL = stringPreferencesKey("tts_model")
         private val KEY_TTS_VOICE = stringPreferencesKey("tts_voice")
         private val KEY_TTS_SPEED = floatPreferencesKey("tts_speed")
     }
@@ -40,9 +46,12 @@ class SettingsStore(private val context: Context) {
         AppSettings(
             whisperServerUrl = prefs[KEY_SERVER_URL] ?: AppSettings().whisperServerUrl,
             whisperServerPort = prefs[KEY_SERVER_PORT] ?: AppSettings().whisperServerPort,
+            whisperApiKey = prefs[KEY_WHISPER_API_KEY] ?: AppSettings().whisperApiKey,
             audioQuality = prefs[KEY_AUDIO_QUALITY] ?: AppSettings().audioQuality,
             ttsServerUrl = prefs[KEY_TTS_SERVER_URL] ?: AppSettings().ttsServerUrl,
             ttsServerPort = prefs[KEY_TTS_SERVER_PORT] ?: AppSettings().ttsServerPort,
+            ttsApiKey = prefs[KEY_TTS_API_KEY] ?: AppSettings().ttsApiKey,
+            ttsModel = prefs[KEY_TTS_MODEL] ?: AppSettings().ttsModel,
             ttsVoice = prefs[KEY_TTS_VOICE] ?: AppSettings().ttsVoice,
             ttsSpeed = prefs[KEY_TTS_SPEED] ?: AppSettings().ttsSpeed
         )
@@ -56,6 +65,10 @@ class SettingsStore(private val context: Context) {
         context.dataStore.edit { it[KEY_SERVER_PORT] = port }
     }
 
+    suspend fun updateWhisperApiKey(apiKey: String) {
+        context.dataStore.edit { it[KEY_WHISPER_API_KEY] = apiKey }
+    }
+
     suspend fun updateAudioQuality(quality: String) {
         context.dataStore.edit { it[KEY_AUDIO_QUALITY] = quality }
     }
@@ -66,6 +79,14 @@ class SettingsStore(private val context: Context) {
 
     suspend fun updateTtsServerPort(port: Int) {
         context.dataStore.edit { it[KEY_TTS_SERVER_PORT] = port }
+    }
+
+    suspend fun updateTtsApiKey(apiKey: String) {
+        context.dataStore.edit { it[KEY_TTS_API_KEY] = apiKey }
+    }
+
+    suspend fun updateTtsModel(model: String) {
+        context.dataStore.edit { it[KEY_TTS_MODEL] = model }
     }
 
     suspend fun updateTtsVoice(voice: String) {

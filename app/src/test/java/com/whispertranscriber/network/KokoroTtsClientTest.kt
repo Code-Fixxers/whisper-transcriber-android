@@ -14,12 +14,19 @@ class KokoroTtsClientTest {
     }
 
     @Test
-    fun speechRequestUsesWavAndClampsSpeed() {
+    fun parseModelsFromOpenAiResponse() {
+        val models = OpenAiModelParser.parse("""{"data":[{"id":"kokoro-tts"},{"id":"whisper-1"}]}""")
+
+        assertEquals(listOf("kokoro-tts", "whisper-1"), models)
+    }
+
+    @Test
+    fun speechRequestUsesConfiguredModelWavAndClampsSpeed() {
         val json = JsonParser.parseString(
-            KokoroSpeechRequest.json("hello", "af_bella", 9.0f)
+            KokoroSpeechRequest.json("hello", "af_bella", 9.0f, "kokoro-tts")
         ).asJsonObject
 
-        assertEquals("kokoro", json.get("model").asString)
+        assertEquals("kokoro-tts", json.get("model").asString)
         assertEquals("hello", json.get("input").asString)
         assertEquals("af_bella", json.get("voice").asString)
         assertEquals("wav", json.get("response_format").asString)

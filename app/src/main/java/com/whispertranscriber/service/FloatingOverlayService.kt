@@ -221,6 +221,7 @@ class FloatingOverlayService : Service() {
             liveKitSession = try {
                 liveKitClient.connect(
                     serverUrl = serverUrl,
+                    apiKey = settings.whisperApiKey,
                     onPartial = { partial ->
                         serviceScope.launch {
                             handleLivePartial(partial)
@@ -276,21 +277,23 @@ class FloatingOverlayService : Service() {
                 val session = liveKitSession
                 liveKitSession = null
                 val result = liveResult?.let {
-                    retryRestIfLiveResultIsBlank(serverUrl, wavData, it)
+                    retryRestIfLiveResultIsBlank(serverUrl, wavData, settings.whisperApiKey, it)
                 } ?: if (liveKitReady && session != null) {
                     try {
-                        retryRestIfLiveResultIsBlank(serverUrl, wavData, session.finish())
+                        retryRestIfLiveResultIsBlank(serverUrl, wavData, settings.whisperApiKey, session.finish())
                     } catch (e: Exception) {
                         Log.w(TAG, "Live transcription finalization failed, retrying with REST", e)
                         whisperClient.transcribe(
                             serverUrl = serverUrl,
-                            audioData = wavData
+                            audioData = wavData,
+                            apiKey = settings.whisperApiKey
                         )
                     }
                 } else {
                     whisperClient.transcribe(
                         serverUrl = serverUrl,
-                        audioData = wavData
+                        audioData = wavData,
+                        apiKey = settings.whisperApiKey
                     )
                 }
                 liveKitReady = false
@@ -335,13 +338,15 @@ class FloatingOverlayService : Service() {
     private suspend fun retryRestIfLiveResultIsBlank(
         serverUrl: String,
         wavData: ByteArray,
+        apiKey: String,
         liveResult: TranscriptionResult
     ): TranscriptionResult {
         if (!liveResult.shouldRetryRestAfterLive()) return liveResult
         Log.w(TAG, "Live transcription returned empty text, retrying with REST")
         return whisperClient.transcribe(
             serverUrl = serverUrl,
-            audioData = wavData
+            audioData = wavData,
+            apiKey = apiKey
         )
     }
 
@@ -550,7 +555,9 @@ class FloatingOverlayService : Service() {
                     serverUrl = serverUrl,
                     text = text,
                     voice = settings.ttsVoice,
-                    speed = settings.ttsSpeed
+                    speed = settings.ttsSpeed,
+                    apiKey = settings.ttsApiKey,
+                    model = settings.ttsModel
                 )
                 Log.d(TAG, "TTS synthesized ${audio.size} bytes for clipboard playback")
                 Toast.makeText(this@FloatingOverlayService, "Playing clipboard", Toast.LENGTH_SHORT).show()
