@@ -59,7 +59,7 @@ class FloatingOverlayService : Service() {
     private lateinit var windowManager: WindowManager
     private lateinit var settingsStore: SettingsStore
     private lateinit var transcriptionLog: TranscriptionLog
-    private val audioRecorder = AudioRecorder()
+    private lateinit var audioRecorder: AudioRecorder
     private val whisperClient = WhisperApiClient()
     private val liveKitClient = WhisperLiveKitClient()
     private val ttsClient = KokoroTtsClient()
@@ -86,6 +86,7 @@ class FloatingOverlayService : Service() {
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         settingsStore = SettingsStore(this)
         transcriptionLog = TranscriptionLog(this)
+        audioRecorder = AudioRecorder(this)
         ttsAudioPlayer = TtsAudioPlayer()
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification())

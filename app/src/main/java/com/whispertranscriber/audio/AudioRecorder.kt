@@ -1,14 +1,19 @@
 package com.whispertranscriber.audio
 
+import android.annotation.SuppressLint
+import android.content.Context
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioRecord
+import android.media.AudioManager
 import android.media.MediaRecorder
+import android.os.Build
 import android.util.Log
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-class AudioRecorder {
+class AudioRecorder(private val context: Context) {
 
     companion object {
         private const val TAG = "AudioRecorder"
@@ -22,9 +27,14 @@ class AudioRecorder {
     private var recordingThread: Thread? = null
     private val audioBuffer = ByteArrayOutputStream()
     private var sampleRate = SAMPLE_RATE_MEDIUM
+    private var audioManager: AudioManager? = null
+    private var previousAudioMode: Int? = null
+    private var communicationDeviceActive = false
+    private var bluetoothScoStarted = false
 
     fun getSampleRate(): Int = sampleRate
 
+    @SuppressLint("MissingPermission")
     fun startRecording(quality: String = "medium", onPcmChunk: ((ByteArray) -> Unit)? = null) {
         if (isRecording) return
 
@@ -44,19 +54,30 @@ class AudioRecorder {
         }
 
         try {
-            audioRecord = AudioRecord(
-                MediaRecorder.AudioSource.MIC,
-                sampleRate,
-                channelConfig,
-                audioFormat,
-                bufferSize * 2
-            )
+            val preferredInput = prepareAudioRouting()
+            audioRecord = AudioRecord.Builder()
+                .setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION)
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setSampleRate(sampleRate)
+                        .setEncoding(audioFormat)
+                        .setChannelMask(channelConfig)
+                        .build()
+                )
+                .setBufferSizeInBytes(bufferSize * 2)
+                .build()
 
             if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
                 Log.e(TAG, "AudioRecord failed to initialize")
                 audioRecord?.release()
                 audioRecord = null
+                restoreAudioRouting()
                 return
+            }
+
+            preferredInput?.let { device ->
+                val routed = audioRecord?.setPreferredDevice(device) == true
+                Log.d(TAG, "Preferred input ${device.productName} (${device.type}) set: $routed")
             }
 
             audioBuffer.reset()
@@ -83,6 +104,10 @@ class AudioRecorder {
             Log.d(TAG, "Recording started at ${sampleRate}Hz")
         } catch (e: SecurityException) {
             Log.e(TAG, "Missing RECORD_AUDIO permission", e)
+            restoreAudioRouting()
+        } catch (e: Exception) {
+            Log.e(TAG, "Recording failed to start", e)
+            restoreAudioRouting()
         }
     }
 
@@ -94,6 +119,7 @@ class AudioRecorder {
         audioRecord?.stop()
         audioRecord?.release()
         audioRecord = null
+        restoreAudioRouting()
 
         val pcmData = synchronized(audioBuffer) {
             audioBuffer.toByteArray()
@@ -109,8 +135,111 @@ class AudioRecorder {
         recordingThread?.join(1000)
         audioRecord?.release()
         audioRecord = null
+        restoreAudioRouting()
         audioBuffer.reset()
     }
+
+    @SuppressLint("MissingPermission")
+    private fun prepareAudioRouting(): AudioDeviceInfo? {
+        val manager = context.getSystemService(AudioManager::class.java) ?: return null
+        audioManager = manager
+        previousAudioMode = manager.mode
+        try {
+            manager.mode = AudioManager.MODE_IN_COMMUNICATION
+        } catch (e: Exception) {
+            Log.w(TAG, "Unable to enter communication audio mode", e)
+        }
+
+        val inputDevices = manager.getDevices(AudioManager.GET_DEVICES_INPUTS).toList()
+        val preferred = AudioInputDeviceSelector.choosePreferredInput(
+            inputDevices.map { device ->
+                AudioInputDevice(
+                    id = device.id,
+                    type = device.type,
+                    name = device.productName?.toString().orEmpty()
+                )
+            }
+        )
+        val preferredInput = preferred?.let { selected ->
+            inputDevices.firstOrNull { it.id == selected.id }
+        }
+        if (preferred != null) {
+            Log.d(TAG, "Selected input ${preferred.name.ifBlank { preferred.id.toString() }} (${preferred.type})")
+            routeCommunicationDevice(manager, preferred.type)
+        }
+        return preferredInput
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun routeCommunicationDevice(manager: AudioManager, preferredInputType: Int) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val communicationDevice = manager.availableCommunicationDevices.firstOrNull { device ->
+                device.type == preferredInputType
+            } ?: manager.availableCommunicationDevices.firstOrNull { device ->
+                isBluetoothType(preferredInputType) && isBluetoothType(device.type)
+            }
+            if (communicationDevice != null) {
+                try {
+                    communicationDeviceActive = manager.setCommunicationDevice(communicationDevice)
+                    Log.d(TAG, "Communication device ${communicationDevice.productName} (${communicationDevice.type}) set: $communicationDeviceActive")
+                } catch (e: SecurityException) {
+                    Log.w(TAG, "Bluetooth routing permission denied", e)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Unable to set communication device", e)
+                }
+            }
+        } else if (preferredInputType == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
+            try {
+                @Suppress("DEPRECATION")
+                manager.startBluetoothSco()
+                @Suppress("DEPRECATION")
+                manager.isBluetoothScoOn = true
+                bluetoothScoStarted = true
+                Log.d(TAG, "Bluetooth SCO routing requested")
+            } catch (e: Exception) {
+                Log.w(TAG, "Unable to start Bluetooth SCO", e)
+            }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun restoreAudioRouting() {
+        val manager = audioManager ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && communicationDeviceActive) {
+            try {
+                manager.clearCommunicationDevice()
+            } catch (e: SecurityException) {
+                Log.w(TAG, "Bluetooth routing permission denied while clearing route", e)
+            } catch (e: Exception) {
+                Log.w(TAG, "Unable to clear communication device", e)
+            }
+        }
+        if (bluetoothScoStarted) {
+            try {
+                @Suppress("DEPRECATION")
+                manager.isBluetoothScoOn = false
+                @Suppress("DEPRECATION")
+                manager.stopBluetoothSco()
+            } catch (e: Exception) {
+                Log.w(TAG, "Unable to stop Bluetooth SCO", e)
+            }
+        }
+        previousAudioMode?.let { mode ->
+            try {
+                manager.mode = mode
+            } catch (e: Exception) {
+                Log.w(TAG, "Unable to restore audio mode", e)
+            }
+        }
+        communicationDeviceActive = false
+        bluetoothScoStarted = false
+        previousAudioMode = null
+        audioManager = null
+    }
+
+    private fun isBluetoothType(type: Int): Boolean =
+        type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+            type == AudioDeviceInfo.TYPE_BLE_HEADSET
 
     private fun createWavFile(pcmData: ByteArray, sampleRate: Int): ByteArray {
         val channels = 1

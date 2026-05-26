@@ -45,6 +45,8 @@ LiteLLM/OpenAI-compatible proxies are supported for REST STT and TTS. Set the pr
 | Permission | Why |
 |---|---|
 | `RECORD_AUDIO` | Capture voice from microphone |
+| `BLUETOOTH_CONNECT` | Use a connected headset microphone on Android 12+ |
+| `MODIFY_AUDIO_SETTINGS` | Route recording through the active communication device |
 | `SYSTEM_ALERT_WINDOW` | Floating bubble overlay |
 | `FOREGROUND_SERVICE` | Keep the overlay alive |
 | `INTERNET` | Send audio to whisper server |
@@ -128,6 +130,7 @@ The app checks a rolling GitHub Release manifest at `app-latest`. When a newer `
 - **HTTP / ws://** works out of the box to any IP (cleartext traffic is allowed via network security config)
 - **HTTPS with self-signed certs** works — the client trusts all certificates (this is a private VPN tool, not a public app)
 - Works over **Tailscale**, **ZeroTier**, or any VPN — just use the VPN IP as the server URL
+- Recording prefers the active headset microphone when Android exposes one, then wired/USB headsets, then the built-in mic
 - Long-press the overlay to open the panel, then tap **SPEAK** to read the current clipboard with the selected Kokoro voice
 
 ## Live endpoint probe

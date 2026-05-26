@@ -4,7 +4,6 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
@@ -17,7 +16,7 @@ import java.util.concurrent.TimeUnit
 
 class WhisperLiveKitClient {
 
-    private val client = OkHttpClient.Builder()
+    private val client = PrivateNetworkOkHttpClientFactory.builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.SECONDS)
         .build()
